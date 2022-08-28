@@ -1,7 +1,7 @@
 [package]
-name = "hello_near"
+name = "wehave_nft"
 version = "1.0.0"
-authors = ["Near Inc <hello@near.org>"]
+authors = ["vandeweyer.niels@gmail.com"]
 edition = "2021"
 
 [lib]
@@ -9,7 +9,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 near-sdk = "4.0.0"
-near-contract-standard = "4.0.0"
+near-contract-standards = "4.0.0"
 uint = { version = "0.9.3", default-features = false }
 
 [profile.release]
