@@ -95,7 +95,20 @@ impl Contract {
         token_owner_id: AccountId,
         token_metadata: TokenMetadata,
     ) -> Token {
+        // Only contract owner is allowed to mint (caller = owner)
         assert_eq!(env::predecessor_account_id(), self.tokens.owner_id, "Unauthorized");
+
+        // TOKENIZE: Create a new fungible token
+        const CODE: &[u8] = include_bytes!("./path/to/compiled.wasm");
+
+        Promise::new("test.token.wehave.near".parse().unwrap())
+            .create_account()
+            .add_full_access_key(env::signer_account_pk())
+            .transfer(3_000_000_000_000_000_000_000_000) // 3e24yN, 3N
+            .deploy_contract(CODE.to_vec())
+
+        // Add to collection: Mint new item owned by fungible token
+
         self.tokens.internal_mint(token_id, token_owner_id, Some(token_metadata))
     }
 }
