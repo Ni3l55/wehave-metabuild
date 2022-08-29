@@ -26,18 +26,17 @@ If you have a frontend, run `npm start`. This will run a dev server.
 Exploring The Code
 ==================
 
-1. The smart-contract code lives in the `/contract` folder. See the README there for
-   more info. In blockchain apps the smart contract is the "backend" of your app.
-2. The frontend code lives in the `/frontend` folder. `/frontend/index.html` is a great
-   place to start exploring. Note that it loads in `/frontend/index.js`,
-   this is your entrypoint to learn how the frontend connects to the NEAR blockchain.
-3. Test your contract: `npm test`, this will run the tests in `integration-tests` directory.
+1. The smart-contract code for the nft lives in the `/nft` folder. See the README there for
+   more info.
+2. The smart-contract code for the fungible token lives in the `/tokenized-item` folder. See the README there for
+   more info.
+3. Either run one the tests through `npm run ...` as defined in `package.json` or run the unit tests with `cargo test` from the folder of the smart contract.
 
 
 Deploy
 ======
 
-Every smart contract in NEAR has its [own associated account][NEAR accounts]. 
+Every smart contract in NEAR has its [own associated account][NEAR accounts].
 When you run `npm run deploy`, your smart contract gets deployed to the live NEAR TestNet with a temporary dev account.
 When you're ready to make it permanent, here's how:
 
