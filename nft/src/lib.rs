@@ -22,8 +22,9 @@ use near_contract_standards::non_fungible_token::NonFungibleToken;
 use near_contract_standards::non_fungible_token::{Token, TokenId};
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::LazyOption;
+use near_sdk::json_types::U128;
 use near_sdk::{
-    env, near_bindgen, require, AccountId, BorshStorageKey, PanicOnDefault, Promise, PromiseOrValue,
+    env, near_bindgen, require, AccountId, BorshStorageKey, PanicOnDefault, Promise, PromiseOrValue, PromiseError, ext_contract, log, Gas
 };
 
 #[near_bindgen]
@@ -35,6 +36,8 @@ pub struct Contract {
 
 const DATA_IMAGE_SVG_NEAR_ICON: &str = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 288 288'%3E%3Cg id='l' data-name='l'%3E%3Cpath d='M187.58,79.81l-30.1,44.69a3.2,3.2,0,0,0,4.75,4.2L191.86,103a1.2,1.2,0,0,1,2,.91v80.46a1.2,1.2,0,0,1-2.12.77L102.18,77.93A15.35,15.35,0,0,0,90.47,72.5H87.34A15.34,15.34,0,0,0,72,87.84V201.16A15.34,15.34,0,0,0,87.34,216.5h0a15.35,15.35,0,0,0,13.08-7.31l30.1-44.69a3.2,3.2,0,0,0-4.75-4.2L96.14,186a1.2,1.2,0,0,1-2-.91V104.61a1.2,1.2,0,0,1,2.12-.77l89.55,107.23a15.35,15.35,0,0,0,11.71,5.43h3.13A15.34,15.34,0,0,0,216,201.16V87.84A15.34,15.34,0,0,0,200.66,72.5h0A15.35,15.35,0,0,0,187.58,79.81Z'/%3E%3C/g%3E%3C/svg%3E";
 
+const TGAS: u64 = 1000000000000;
+
 #[derive(BorshSerialize, BorshStorageKey)]
 enum StorageKey {
     NonFungibleToken,
@@ -42,6 +45,11 @@ enum StorageKey {
     TokenMetadata,
     Enumeration,
     Approval,
+}
+
+#[ext_contract(ext_ft)]
+trait FungibleToken {
+    fn ft_transfer(&mut self, receiver_id: AccountId, amount: U128, memo: Option<String>);
 }
 
 #[near_bindgen]
@@ -93,28 +101,69 @@ impl Contract {
         &mut self,
         token_id: TokenId,
         token_metadata: TokenMetadata,
-    ) -> Token {
+    ) {
         // Only contract owner is allowed to mint (caller = owner)
         assert_eq!(env::predecessor_account_id(), self.tokens.owner_id, "Unauthorized");
+
+        log!("ok1");
 
         // TOKENIZE: Create a new fungible token
         const CODE: &[u8] = include_bytes!("../../tokenized-item/target/wasm32-unknown-unknown/release/wehave_ft.wasm");
 
-        let ft_account_id: AccountId = "test.token.wehave.near".parse().unwrap();
+        let ft_account_id: AccountId = AccountId::new_unchecked(
+          format!("{}.{}", "token", env::current_account_id())
+        );
 
         Promise::new(ft_account_id.clone())
             .create_account()
             .add_full_access_key(env::signer_account_pk())
             .transfer(3_000_000_000_000_000_000_000_000) // 3e24yN, 3N
-            .deploy_contract(CODE.to_vec());
+            .deploy_contract(CODE.to_vec())
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(Gas(5*TGAS))
+                    .fungible_token_deploy_callback(ft_account_id, token_id, token_metadata)
+            );
+    }
 
-        // TODO cross contract call to distribute supply here.
-        // use https://docs.near.org/sdk/rust/cross-contract/callbacks
-        // Distribute supply equally over some test accounts
+    #[private]
+    pub fn fungible_token_deploy_callback(&mut self, ft_account_id: AccountId, token_id: TokenId, token_metadata: TokenMetadata, #[callback_result] call_result: Result<String, PromiseError>) {
+        if call_result.is_err() {
+            log!("There was an error deploying the {} fungible token contract", ft_account_id);
+            log!("{:?}", call_result);
+        }
+
+        log!("Ok, token id: {}", token_id);
+
+        // Contract deployed: mint token & distribute supply
 
         // Add to collection: Mint new item owned by fungible token
-        self.tokens.internal_mint(token_id, ft_account_id, Some(token_metadata))
+        self.tokens.internal_mint(token_id, ft_account_id.clone(), Some(token_metadata));
+
+        log!("ok2");
+
+        // Call newly deployed fungible token contract
+        let receiver_id: AccountId = "receiver1.near".parse().unwrap();
+        ext_ft::ext(ft_account_id)
+            .ft_transfer(receiver_id, U128::from(200), None)
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(Gas(2*TGAS))
+                    .fungible_token_distribute_callback()
+            );
     }
+
+    #[private]
+    pub fn fungible_token_distribute_callback(&self, #[callback_result] call_result: Result<String, PromiseError>) {
+        log!("hi");
+
+        if call_result.is_err() {
+            log!("Unable to distribute supply of newly deployed contract");
+        } else {
+            log!("Distribution of tokens was successful!");
+        }
+    }
+
 }
 
 near_contract_standards::impl_non_fungible_token_core!(Contract, tokens);

@@ -9,7 +9,7 @@
     "build:ft": "cd tokenized-item && rustup target add wasm32-unknown-unknown && cargo build --all --target wasm32-unknown-unknown --release",
     "test": "npm run test:unit && npm run test:integration",
     "test:unit": "cd nft && cargo test",
-    "test:integration": "npm run build:nft && cd integration-tests && cargo run --example integration-tests \"../nft/target/wasm32-unknown-unknown/release/hello_near.wasm\"",
+    "test:integration": "npm run build:nft && cd integration-tests && cargo run --example integration-tests \"../nft/target/wasm32-unknown-unknown/release/wehave_nft.wasm\"",
     "deps-install": "npm install"
   },
   "devDependencies": {
