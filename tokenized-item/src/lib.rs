@@ -46,6 +46,7 @@ enum StorageKey {
 impl Contract {
     /// Initializes the contract with the given total supply owned by the given `owner_id` with
     /// default metadata (for example purposes only).
+    /// TODO: receive initial distribution of tokens here as well.
     #[init]
     pub fn new_default_meta(owner_id: AccountId, total_supply: U128) -> Self {
         Self::new(
@@ -74,7 +75,12 @@ impl Contract {
             metadata: LazyOption::new(StorageKey::Metadata, Some(&metadata)),
         };
         this.token.internal_register_account(&owner_id);
-        this.token.internal_deposit(&owner_id, total_supply.into());
+        this.token.internal_deposit(&owner_id, total_supply.into());    // Already mint all tokens to contract owner
+
+        // TODO initial distribution --> based on parameter from crowdfund
+        let receiver_id = "niels.test.near".parse().unwrap();
+        this.token.ft_transfer(receiver_id, U128::from(200), None);
+
         this
     }
 

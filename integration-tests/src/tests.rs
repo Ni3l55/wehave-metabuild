@@ -16,13 +16,25 @@ async fn main() -> anyhow::Result<()> {
     let wasm_arg: &str = &(env::args().nth(1).unwrap());
     let wasm_filepath = fs::canonicalize(env::current_dir()?.join(wasm_arg))?;
 
-    // Create a sandbox (workspace) and deploy WASM
+    // Create a sandbox (workspace)
     let worker = workspaces::sandbox().await?;
     let wasm = std::fs::read(wasm_filepath)?;
-    let contract = worker.dev_deploy(&wasm).await?;
 
-    // Create account in sandbox (alice.test.near)
     let account = worker.root_account()?;
+
+    // Create nft account in sandbox and deploy WASM
+    let sc_account = account
+        .create_subaccount(&worker, "nft")
+        .initial_balance(parse_near!("200 N"))
+        .transact()
+        .await?
+        .into_result()?;
+
+    let contract = sc_account.deploy(&worker, &wasm)
+        .await?
+        .into_result()?;
+
+    // Create account in sandbox (alice.test.near) (acts as crowdfund)
     let alice = account
         .create_subaccount(&worker, "alice")
         .initial_balance(parse_near!("30 N"))
@@ -30,15 +42,24 @@ async fn main() -> anyhow::Result<()> {
         .await?
         .into_result()?;
 
+    // Create account in sandbox (niels.test.near) (acts as funder)
+    let niels = account
+        .create_subaccount(&worker, "niels")
+        .initial_balance(parse_near!("30 N"))
+        .transact()
+        .await?
+        .into_result()?;
+
     // ---------------- ACT ----------------
 
-    // begin tests
-    test_mint_nft(&alice, &contract, &worker).await?;   // Alice mints "1" for herself
+    // Mint 1 nft --> create new ft in background
+    test_mint_nft(&alice, &contract, &worker).await?;   // Alice mints "1"
 
     // ---------------- ASSERT ----------------
 
     check_if_nft_minted(&alice, &contract, &worker).await?;
-    //check_fungible_token_balance().await?;
+
+    check_fungible_token_balance(&niels, &contract, &worker).await?;
 
     Ok(())
 }
@@ -49,11 +70,12 @@ async fn test_mint_nft(
     worker: &Worker<Sandbox>,
 ) -> anyhow::Result<()> {
 
-    println!("test");
+    println!("user = {:?}", user);
+    println!("contract = {:?}", contract);
 
     let owner_id: AccountId = "alice.test.near".parse().unwrap();
 
-    println!("test2");
+    println!("Initializing contract at {:?}", contract);
 
     user.call(&worker, contract.id(), "new_default_meta")
         .args_json(serde_json::json!({
@@ -62,7 +84,7 @@ async fn test_mint_nft(
         .transact()
         .await?;
 
-    println!("test3");
+    println!("Initialized.");
 
     let token_id: TokenId = String::from("1");
     let token_metadata: TokenMetadata = TokenMetadata {
@@ -80,9 +102,12 @@ async fn test_mint_nft(
         reference_hash: None, //
     };
 
+    println!("Minting as user {:?} for contract with id {:?}, for token {:?}", user, contract.id(), token_id);
+
     let result = user.call(&worker, contract.id(), "nft_mint")
         .args_json(json!({"token_id": token_id, "token_metadata": token_metadata}))?
         .max_gas()
+        .deposit(parse_near!("3 N"))
         .transact()
         .await?;
 
@@ -97,12 +122,32 @@ async fn check_if_nft_minted(user: &Account, contract: &Contract, worker: &Worke
     let result = user.call(&worker, contract.id(), "nft_token")
         .args_json(json!({"token_id": token_id}))?
         .transact()
-        .await?;
+        .await?
+        .json()?;
 
-    let token: Option<Token> = result.json()?;
+    println!("RESULT: {:#?}", result);
 
-    println!("{:?}", result.logs());
-    println!("{:#?}", token);
+    Ok(())
+}
+
+async fn check_fungible_token_balance(user: &Account, contract: &Contract, worker: &Worker<Sandbox>) -> anyhow::Result<()> {
+    let idk = user.view_account(&worker).await?;
+
+    println!("{}", idk.balance);
+
+    println!("{:?}", idk);
+
+    // in some way, instantiate contract at token.nft.test.near and get the niels balance
+
+    //let account_id: AccountId = "niels.test.near".parse().unwrap();
+
+    //let result = user.call(&worker, ft_account_id, "ft_balance_of")
+    //    .args_json(json!({"account_id": account_id}))?
+    //    .transact()
+    //    .await?
+    //    .json()?;
+
+    //println!("RESULT: {:#?}", result);
 
     Ok(())
 }

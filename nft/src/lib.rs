@@ -24,8 +24,9 @@ use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::LazyOption;
 use near_sdk::json_types::U128;
 use near_sdk::{
-    env, near_bindgen, require, AccountId, BorshStorageKey, PanicOnDefault, Promise, PromiseOrValue, PromiseError, ext_contract, log, Gas
+    env, near_bindgen, require, AccountId, BorshStorageKey, PanicOnDefault, Promise, PromiseOrValue, PromiseError, ext_contract, log, Gas, Balance
 };
+use near_sdk::serde_json::json;
 
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
@@ -101,11 +102,9 @@ impl Contract {
         &mut self,
         token_id: TokenId,
         token_metadata: TokenMetadata,
-    ) {
+    ) -> Token {
         // Only contract owner is allowed to mint (caller = owner)
         assert_eq!(env::predecessor_account_id(), self.tokens.owner_id, "Unauthorized");
-
-        log!("ok1");
 
         // TOKENIZE: Create a new fungible token
         const CODE: &[u8] = include_bytes!("../../tokenized-item/target/wasm32-unknown-unknown/release/wehave_ft.wasm");
@@ -114,56 +113,28 @@ impl Contract {
           format!("{}.{}", "token", env::current_account_id())
         );
 
+        log!("Creating account & deploying contract for ft: {}", ft_account_id);
+
         Promise::new(ft_account_id.clone())
             .create_account()
             .add_full_access_key(env::signer_account_pk())
-            .transfer(3_000_000_000_000_000_000_000_000) // 3e24yN, 3N
             .deploy_contract(CODE.to_vec())
-            .then(
-                Self::ext(env::current_account_id())
-                    .with_static_gas(Gas(5*TGAS))
-                    .fungible_token_deploy_callback(ft_account_id, token_id, token_metadata)
+            .transfer(env::attached_deposit())
+            .function_call(
+                String::from("new_default_meta"),
+                json!({"owner_id": env::current_account_id(), "total_supply": U128::from(10000)})
+                    .to_string()
+                    .as_bytes()
+                    .to_vec(),
+                0,
+                Gas(100_000_000_000_000),
             );
-    }
 
-    #[private]
-    pub fn fungible_token_deploy_callback(&mut self, ft_account_id: AccountId, token_id: TokenId, token_metadata: TokenMetadata, #[callback_result] call_result: Result<String, PromiseError>) {
-        if call_result.is_err() {
-            log!("There was an error deploying the {} fungible token contract", ft_account_id);
-            log!("{:?}", call_result);
-        }
-
-        log!("Ok, token id: {}", token_id);
-
-        // Contract deployed: mint token & distribute supply
+        log!("Minting item {} for ft account {}", token_id, ft_account_id);
 
         // Add to collection: Mint new item owned by fungible token
-        self.tokens.internal_mint(token_id, ft_account_id.clone(), Some(token_metadata));
-
-        log!("ok2");
-
-        // Call newly deployed fungible token contract
-        let receiver_id: AccountId = "receiver1.near".parse().unwrap();
-        ext_ft::ext(ft_account_id)
-            .ft_transfer(receiver_id, U128::from(200), None)
-            .then(
-                Self::ext(env::current_account_id())
-                    .with_static_gas(Gas(2*TGAS))
-                    .fungible_token_distribute_callback()
-            );
+        self.tokens.internal_mint(token_id, ft_account_id, Some(token_metadata))
     }
-
-    #[private]
-    pub fn fungible_token_distribute_callback(&self, #[callback_result] call_result: Result<String, PromiseError>) {
-        log!("hi");
-
-        if call_result.is_err() {
-            log!("Unable to distribute supply of newly deployed contract");
-        } else {
-            log!("Distribution of tokens was successful!");
-        }
-    }
-
 }
 
 near_contract_standards::impl_non_fungible_token_core!(Contract, tokens);
@@ -185,7 +156,7 @@ mod tests {
 
     use super::*;
 
-    const MINT_STORAGE_COST: u128 = 5870000000000000000000;
+    const MINT_STORAGE_COST: u128 = 5870000000000000000000 * 10;
 
     fn get_context(predecessor_account_id: AccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
@@ -243,7 +214,7 @@ mod tests {
             .build());
 
         let token_id = "0".to_string();
-        let token = contract.nft_mint(token_id.clone(), accounts(0), sample_token_metadata());
+        let token = contract.nft_mint(token_id.clone(), sample_token_metadata());
         assert_eq!(token.token_id, token_id);
         assert_eq!(token.owner_id, accounts(0));
         assert_eq!(token.metadata.unwrap(), sample_token_metadata());
@@ -262,7 +233,7 @@ mod tests {
             .predecessor_account_id(accounts(0))
             .build());
         let token_id = "0".to_string();
-        contract.nft_mint(token_id.clone(), accounts(0), sample_token_metadata());
+        contract.nft_mint(token_id.clone(), sample_token_metadata());
 
         testing_env!(context
             .storage_usage(env::storage_usage())
@@ -299,7 +270,7 @@ mod tests {
             .predecessor_account_id(accounts(0))
             .build());
         let token_id = "0".to_string();
-        contract.nft_mint(token_id.clone(), accounts(0), sample_token_metadata());
+        contract.nft_mint(token_id.clone(), sample_token_metadata());
 
         // alice approves bob
         testing_env!(context
@@ -330,7 +301,7 @@ mod tests {
             .predecessor_account_id(accounts(0))
             .build());
         let token_id = "0".to_string();
-        contract.nft_mint(token_id.clone(), accounts(0), sample_token_metadata());
+        contract.nft_mint(token_id.clone(), sample_token_metadata());
 
         // alice approves bob
         testing_env!(context
@@ -368,7 +339,7 @@ mod tests {
             .predecessor_account_id(accounts(0))
             .build());
         let token_id = "0".to_string();
-        contract.nft_mint(token_id.clone(), accounts(0), sample_token_metadata());
+        contract.nft_mint(token_id.clone(), sample_token_metadata());
 
         // alice approves bob
         testing_env!(context
