@@ -50,12 +50,7 @@ async fn main() -> anyhow::Result<()> {
         .await?
         .into_result()?;
 
-    // Check token account in sandbox
-    //let token = sc_account
-    //    .create_subaccount(&worker, "token")
-    //    .transact()
-    //    .await?
-    //    .into_result()?;
+
 
     // ---------------- ACT ----------------
 
@@ -68,7 +63,14 @@ async fn main() -> anyhow::Result<()> {
 
     check_fungible_token_balance(&niels, &contract, &worker).await?;
 
-    //check_fungible_token_balance(&token, &contract, &worker).await?;
+    // Check token account in sandbox
+    let token = sc_account
+        .create_subaccount(&worker, "token")
+        .transact()
+        .await?
+        .into_result()?;
+
+    check_fungible_token_balance(&token, &contract, &worker).await?;
 
     Ok(())
 }
@@ -132,8 +134,6 @@ async fn check_if_nft_minted(user: &Account, contract: &Contract, worker: &Worke
         .args_json(json!({"token_id": token_id}))?
         .transact()
         .await?;
-
-    println!("RESULT: {:#?}", result);
 
     Ok(())
 }

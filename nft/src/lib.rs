@@ -119,7 +119,7 @@ impl Contract {
             .create_account()
             .add_full_access_key(env::signer_account_pk())
             .deploy_contract(CODE.to_vec())
-            .transfer(env::attached_deposit())
+            .transfer(env::attached_deposit())  // Transfer some NEAR for storage
             .function_call(
                 String::from("new_default_meta"),
                 json!({"owner_id": env::current_account_id(), "total_supply": U128::from(10000)})
@@ -131,7 +131,7 @@ impl Contract {
             ).then(
                 Self::ext(env::current_account_id())
                 .with_static_gas(Gas(10*TGAS))
-                .with_attached_deposit(env::attached_deposit()/5)
+                .with_attached_deposit(env::attached_deposit()/5)   // Transfer some NEAR for minting cost
                 .ft_deploy_callback(token_id, ft_account_id, token_metadata)
             )
     }
