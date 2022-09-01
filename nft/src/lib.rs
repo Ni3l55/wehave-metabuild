@@ -102,7 +102,7 @@ impl Contract {
         &mut self,
         token_id: TokenId,
         token_metadata: TokenMetadata,
-    ) -> Token {
+    ) -> Promise {
         // Only contract owner is allowed to mint (caller = owner)
         assert_eq!(env::predecessor_account_id(), self.tokens.owner_id, "Unauthorized");
 
@@ -127,13 +127,25 @@ impl Contract {
                     .as_bytes()
                     .to_vec(),
                 0,
-                Gas(100_000_000_000_000),
-            );
+                Gas(100*TGAS),
+            ).then(
+                Self::ext(env::current_account_id())
+                .with_static_gas(Gas(10*TGAS))
+                .with_attached_deposit(env::attached_deposit()/5)
+                .ft_deploy_callback(token_id, ft_account_id, token_metadata)
+            )
+    }
 
-        log!("Minting item {} for ft account {}", token_id, ft_account_id);
+    #[handle_result]
+    #[private]
+    #[payable]
+    pub fn ft_deploy_callback(&mut self, token_id: TokenId, owner_id: AccountId, token_metadata: TokenMetadata, #[callback_result] call_result: Result<(), PromiseError>) {
 
+        log!("CALLBACK RESULT: {:?}", call_result);
+
+        log!("Minting item {} for ft account {}", token_id, owner_id);
         // Add to collection: Mint new item owned by fungible token
-        self.tokens.internal_mint(token_id, ft_account_id, Some(token_metadata))
+        self.tokens.internal_mint(token_id, owner_id, Some(token_metadata));
     }
 }
 

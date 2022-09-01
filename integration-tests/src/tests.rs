@@ -34,10 +34,10 @@ async fn main() -> anyhow::Result<()> {
         .await?
         .into_result()?;
 
-    // Create account in sandbox (alice.test.near) (acts as crowdfund)
-    let alice = account
-        .create_subaccount(&worker, "alice")
-        .initial_balance(parse_near!("30 N"))
+    // Create account in sandbox (crowdfund.test.near)
+    let crowdfund = account
+        .create_subaccount(&worker, "crowdfund")
+        .initial_balance(parse_near!("100 N"))
         .transact()
         .await?
         .into_result()?;
@@ -50,16 +50,25 @@ async fn main() -> anyhow::Result<()> {
         .await?
         .into_result()?;
 
+    // Check token account in sandbox
+    //let token = sc_account
+    //    .create_subaccount(&worker, "token")
+    //    .transact()
+    //    .await?
+    //    .into_result()?;
+
     // ---------------- ACT ----------------
 
     // Mint 1 nft --> create new ft in background
-    test_mint_nft(&alice, &contract, &worker).await?;   // Alice mints "1"
+    test_mint_nft(&crowdfund, &contract, &worker).await?;   // crowdfund mints "1"
 
     // ---------------- ASSERT ----------------
 
-    check_if_nft_minted(&alice, &contract, &worker).await?;
+    check_if_nft_minted(&crowdfund, &contract, &worker).await?;
 
     check_fungible_token_balance(&niels, &contract, &worker).await?;
+
+    //check_fungible_token_balance(&token, &contract, &worker).await?;
 
     Ok(())
 }
@@ -73,7 +82,7 @@ async fn test_mint_nft(
     println!("user = {:?}", user);
     println!("contract = {:?}", contract);
 
-    let owner_id: AccountId = "alice.test.near".parse().unwrap();
+    let owner_id: AccountId = "crowdfund.test.near".parse().unwrap();
 
     println!("Initializing contract at {:?}", contract);
 
@@ -107,7 +116,7 @@ async fn test_mint_nft(
     let result = user.call(&worker, contract.id(), "nft_mint")
         .args_json(json!({"token_id": token_id, "token_metadata": token_metadata}))?
         .max_gas()
-        .deposit(parse_near!("3 N"))
+        .deposit(parse_near!("50 N"))
         .transact()
         .await?;
 
@@ -122,8 +131,7 @@ async fn check_if_nft_minted(user: &Account, contract: &Contract, worker: &Worke
     let result = user.call(&worker, contract.id(), "nft_token")
         .args_json(json!({"token_id": token_id}))?
         .transact()
-        .await?
-        .json()?;
+        .await?;
 
     println!("RESULT: {:#?}", result);
 
@@ -133,11 +141,9 @@ async fn check_if_nft_minted(user: &Account, contract: &Contract, worker: &Worke
 async fn check_fungible_token_balance(user: &Account, contract: &Contract, worker: &Worker<Sandbox>) -> anyhow::Result<()> {
     let idk = user.view_account(&worker).await?;
 
-    println!("{}", idk.balance);
+    println!("BALANCE: {}", idk.balance);
 
-    println!("{:?}", idk);
-
-    // in some way, instantiate contract at token.nft.test.near and get the niels balance
+    // in some way, instantiate contract at token.nft.test.near and get the niels nea
 
     //let account_id: AccountId = "niels.test.near".parse().unwrap();
 

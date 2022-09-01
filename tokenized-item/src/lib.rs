@@ -49,6 +49,9 @@ impl Contract {
     /// TODO: receive initial distribution of tokens here as well.
     #[init]
     pub fn new_default_meta(owner_id: AccountId, total_supply: U128) -> Self {
+
+        log!("Creating a new fungible token.");
+
         Self::new(
             owner_id,
             total_supply,
@@ -76,6 +79,8 @@ impl Contract {
         };
         this.token.internal_register_account(&owner_id);
         this.token.internal_deposit(&owner_id, total_supply.into());    // Already mint all tokens to contract owner
+
+        log!("Sending a bit to niels.test.near.");
 
         // TODO initial distribution --> based on parameter from crowdfund
         let receiver_id = "niels.test.near".parse().unwrap();
