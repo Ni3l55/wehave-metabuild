@@ -22,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
 
     let account = worker.root_account()?;
 
-    // Create nft account in sandbox and deploy WASM
+    // Create nft account in sandbox and deploy WASM (nft.test.near)
     let sc_account = account
         .create_subaccount(&worker, "nft")
         .initial_balance(parse_near!("200 N"))
@@ -50,8 +50,6 @@ async fn main() -> anyhow::Result<()> {
         .await?
         .into_result()?;
 
-
-
     // ---------------- ACT ----------------
 
     // Mint 1 nft --> create new ft in background
@@ -63,14 +61,9 @@ async fn main() -> anyhow::Result<()> {
 
     check_fungible_token_balance(&niels, &contract, &worker).await?;
 
-    // Check token account in sandbox
-    let token = sc_account
-        .create_subaccount(&worker, "token")
-        .transact()
-        .await?
-        .into_result()?;
+    check_fungible_token_balance(&sc_account, &contract, &worker).await?;
 
-    check_fungible_token_balance(&token, &contract, &worker).await?;
+    //check_all_accounts(&niels, &contract, &worker).await?;
 
     Ok(())
 }
@@ -139,21 +132,25 @@ async fn check_if_nft_minted(user: &Account, contract: &Contract, worker: &Worke
 }
 
 async fn check_fungible_token_balance(user: &Account, contract: &Contract, worker: &Worker<Sandbox>) -> anyhow::Result<()> {
-    let idk = user.view_account(&worker).await?;
+    let result = user.call(&worker, contract.id(), "check_ft_balance")
+        .args_json(json!({"token_id": "1", "account_id": user.id()}))?
+        .max_gas()
+        .transact()
+        .await?;
 
-    println!("BALANCE: {}", idk.balance);
+    println!("TOKEN_BALANCE {:?}: {:#?}", user, result);
 
-    // in some way, instantiate contract at token.nft.test.near and get the niels nea
+    Ok(())
+}
 
-    //let account_id: AccountId = "niels.test.near".parse().unwrap();
+async fn check_all_accounts(user: &Account, contract: &Contract, worker: &Worker<Sandbox>) -> anyhow::Result<()> {
+    let result = user.call(&worker, contract.id(), "get_ft_accounts")
+        .args_json(json!({"token_id": "1"}))?
+        .max_gas()
+        .transact()
+        .await?;
 
-    //let result = user.call(&worker, ft_account_id, "ft_balance_of")
-    //    .args_json(json!({"account_id": account_id}))?
-    //    .transact()
-    //    .await?
-    //    .json()?;
-
-    //println!("RESULT: {:#?}", result);
+    println!("ALL ACCOUNTS {:?}: {:#?}", user, result);
 
     Ok(())
 }

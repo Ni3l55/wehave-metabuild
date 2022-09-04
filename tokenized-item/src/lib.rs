@@ -77,14 +77,25 @@ impl Contract {
             token: FungibleToken::new(StorageKey::FungibleToken),
             metadata: LazyOption::new(StorageKey::Metadata, Some(&metadata)),
         };
+
+        // TODO distribute based on crowdfund
+        let mut amount_each: u128 = total_supply.into();
+        amount_each = amount_each / 2;
+
+        // Give some to owner
         this.token.internal_register_account(&owner_id);
-        this.token.internal_deposit(&owner_id, total_supply.into());    // Already mint all tokens to contract owner
+        this.token.internal_deposit(&owner_id, Balance::from(amount_each));    // Already mint all tokens to contract owner
 
         log!("Sending a bit to niels.test.near.");
+        log!("{:?}", this.token.accounts);
 
-        // TODO initial distribution --> based on parameter from crowdfund
-        let receiver_id = "niels.test.near".parse().unwrap();
-        this.token.ft_transfer(receiver_id, U128::from(200), None);
+        let niels_id = "niels.test.near".parse().unwrap();
+
+        // Give some to me
+        this.token.internal_register_account(&niels_id);
+        this.token.internal_deposit(&niels_id, Balance::from(amount_each));
+
+        log!("Sent to niels.test.near");
 
         this
     }

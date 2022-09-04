@@ -20,6 +20,7 @@ use near_contract_standards::non_fungible_token::metadata::{
 };
 use near_contract_standards::non_fungible_token::NonFungibleToken;
 use near_contract_standards::non_fungible_token::{Token, TokenId};
+use near_sdk::collections::LookupMap;
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::LazyOption;
 use near_sdk::json_types::U128;
@@ -51,6 +52,8 @@ enum StorageKey {
 #[ext_contract(ext_ft)]
 trait FungibleToken {
     fn ft_transfer(&mut self, receiver_id: AccountId, amount: U128, memo: Option<String>);
+    fn ft_balance_of(&mut self, account_id: AccountId);
+    fn get_accounts(&mut self);
 }
 
 #[near_bindgen]
@@ -140,12 +143,39 @@ impl Contract {
     #[private]
     #[payable]
     pub fn ft_deploy_callback(&mut self, token_id: TokenId, owner_id: AccountId, token_metadata: TokenMetadata, #[callback_result] call_result: Result<(), PromiseError>) {
-
         log!("CALLBACK RESULT: {:?}", call_result);
 
         log!("Minting item {} for ft account {}", token_id, owner_id);
         // Add to collection: Mint new item owned by fungible token
         self.tokens.internal_mint(token_id, owner_id, Some(token_metadata));
+    }
+
+    /// Gateway function for checking the balance of one of the tokenized items through nft contract
+    pub fn check_ft_balance(&mut self, token_id: TokenId, account_id: AccountId) -> Option<Promise> {
+        // Get the holder of the token
+        if let Some(token) = self.tokens.nft_token(token_id) {
+            let token_account: AccountId = token.owner_id;
+
+            // Cross-contract call to get the balance
+            Some(ext_ft::ext(token_account)
+                .with_static_gas(Gas(2*TGAS))
+                .ft_balance_of(account_id)
+                .then(
+                    Self::ext(env::current_account_id())
+                        .with_static_gas(Gas(1*TGAS))
+                        .check_balance_callback()
+                ))
+        } else {
+            None
+        }
+    }
+
+    #[private]
+    pub fn check_balance_callback(&mut self, #[callback_result] call_result: Result<U128, PromiseError>) -> Option<U128> {
+        match call_result {
+            Ok(n) => return Some(n),
+            Err(e) => return None
+        }
     }
 }
 
