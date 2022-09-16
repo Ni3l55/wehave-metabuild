@@ -1,5 +1,5 @@
 [package]
-name = "tokenized-item"
+name = "crowdfund"
 version = "1.0.0"
 authors = ["WeHave <niels@wehave.io>"]
 edition = "2021"
@@ -9,9 +9,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 near-sdk = "4.0.0"
-near-contract-standards = "4.0.0"
 uint = { version = "0.9.3", default-features = false }
-percentage = "0.1.0"
 
 [profile.release]
 codegen-units = 1

@@ -27,8 +27,6 @@ use near_sdk::{
     PromiseOrValue,
 };
 
-use percentage::Percentage;
-
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
 pub struct Contract {
@@ -47,19 +45,16 @@ enum StorageKey {
 #[near_bindgen]
 impl Contract {
     /// Initializes the contract with the given total supply owned by the given `owner_id` with
+    /// default metadata (for example purposes only).
     #[init]
-    pub fn new_default_meta(owner_id: AccountId, total_supply: U128, holders: Vec<AccountId>, shares: Vec<U128>) -> Self {
-        log!("Creating a new fungible token.");
-
+    pub fn new_default_meta(owner_id: AccountId, total_supply: U128) -> Self {
         Self::new(
             owner_id,
             total_supply,
-            holders,
-            shares,
             FungibleTokenMetadata {
                 spec: FT_METADATA_SPEC.to_string(),
-                name: "WeHave tokenized item".to_string(),  // This could be filled based on item description as well
-                symbol: "WHI".to_string(),
+                name: "Fake USDC ft".to_string(),
+                symbol: "fUSDC".to_string(),
                 icon: Some(DATA_IMAGE_SVG_NEAR_ICON.to_string()),
                 reference: None,
                 reference_hash: None,
@@ -71,45 +66,17 @@ impl Contract {
     /// Initializes the contract with the given total supply owned by the given `owner_id` with
     /// the given fungible token metadata.
     #[init]
-    pub fn new(owner_id: AccountId, total_supply: U128, holders: Vec<AccountId>, shares: Vec<U128>, metadata: FungibleTokenMetadata) -> Self {
+    pub fn new(owner_id: AccountId, total_supply: U128, metadata: FungibleTokenMetadata) -> Self {
         require!(!env::state_exists(), "Already initialized");
         metadata.assert_valid();
-
         let mut this = Self {
             token: FungibleToken::new(StorageKey::FungibleToken),
             metadata: LazyOption::new(StorageKey::Metadata, Some(&metadata)),
         };
 
-        let mut total_funding: u128 = 0;
-
-        // Calculate total funding for this item by agreggating all crowdfunders
-        for share in &shares {
-            let share_u128: u128 = (*share).into();
-            total_funding = total_funding + share_u128;
-        }
-
-        let mut index = 0;
-
-        for holder in &holders {
-            // Register the crowdfunder as a token holder
-            this.token.internal_register_account(&holder);
-
-            // Calculate how much to deposit the crowdfunder (holder)
-            let holder_funding = shares[index];
-            let holder_funding_u128: u128 = holder_funding.into();
-
-            let holder_percentage = Percentage::from(holder_funding_u128 / (total_funding / 100));
-
-            let total_supply_u128: u128 = total_supply.into();
-            let holder_token_supply: u128 = holder_percentage.apply_to(total_supply_u128);
-
-            // Deposit user's share of the supply
-            this.token.internal_deposit(&holder, Balance::from(holder_token_supply));
-
-            log!("{}: giving {} tokens: {}", env::current_account_id(), holder, holder_token_supply);
-
-            index = index + 1;
-        }
+        // Give all tokens to the owner
+        this.token.internal_register_account(&owner_id);
+        this.token.internal_deposit(&owner_id, total_supply.into());    // Already mint all tokens to contract owner
 
         this
     }

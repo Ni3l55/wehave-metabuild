@@ -3,115 +3,143 @@ use near_units::parse_near;
 use serde_json::json;
 use workspaces::prelude::*;
 use workspaces::{network::Sandbox, Account, Contract, Worker};
-use near_contract_standards::non_fungible_token::{Token, TokenId};
-use near_contract_standards::non_fungible_token::metadata::TokenMetadata;
+use near_sdk::json_types::U128;
 use near_sdk::AccountId;
-use near_sdk::log;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // ---------------- ARRANGE ----------------
 
-    // Read WASM from cmd line
+    // Read crowdfund WASM from cmd line
     let wasm_arg: &str = &(env::args().nth(1).unwrap());
     let wasm_filepath = fs::canonicalize(env::current_dir()?.join(wasm_arg))?;
+    let crowdfund_wasm = std::fs::read(wasm_filepath)?;
+
+    // Read fusdc WASM from cmd line
+    let wasm_arg_fusdc: &str = &(env::args().nth(2).unwrap());
+    let wasm_filepath_fusdc = fs::canonicalize(env::current_dir()?.join(wasm_arg_fusdc))?;
+    let fusdc_wasm = std::fs::read(wasm_filepath_fusdc)?;
 
     // Create a sandbox (workspace)
     let worker = workspaces::sandbox().await?;
-    let wasm = std::fs::read(wasm_filepath)?;
 
+    // Create root test account (test.near)
     let account = worker.root_account()?;
 
-    // Create nft account in sandbox and deploy WASM (nft.test.near)
-    let sc_account = account
-        .create_subaccount(&worker, "nft")
+    // Create main wehave owner contract (wehave.test.near)
+    let wehave_account = account
+        .create_subaccount(&worker, "wehave")
+        .initial_balance(parse_near!("30 N"))
+        .transact()
+        .await?
+        .into_result()?;
+
+    // Create crowdfund account in sandbox and deploy WASM (crowdfund.test.near)
+    let crowdfund_account = account
+        .create_subaccount(&worker, "crowdfund")
         .initial_balance(parse_near!("200 N"))
         .transact()
         .await?
         .into_result()?;
 
-    let contract = sc_account.deploy(&worker, &wasm)
+    let crowdfund_contract = crowdfund_account.deploy(&worker, &crowdfund_wasm)
         .await?
         .into_result()?;
 
-    // Create account in sandbox (crowdfund.test.near)
-    let crowdfund = account
-        .create_subaccount(&worker, "crowdfund")
+    // Initialize crowdfund contract
+    wehave_account.call(&worker, crowdfund_contract.id(), "new")
+        .transact()
+        .await?;
+
+    // Create fake usdc account in sandbox and deploy WASM (fusdc.test.near)
+    let fusdc_account = account
+        .create_subaccount(&worker, "fusdc")
         .initial_balance(parse_near!("100 N"))
         .transact()
         .await?
         .into_result()?;
 
-    // Create account in sandbox (niels.test.near) (acts as funder)
-    let niels = account
-        .create_subaccount(&worker, "niels")
-        .initial_balance(parse_near!("30 N"))
+    let fusdc_contract = fusdc_account.deploy(&worker, &fusdc_wasm)
+        .await?
+        .into_result()?;
+
+    // Initialize fake usdc contract for testing
+    let wehave_id: AccountId = "wehave.test.near".parse().unwrap();
+    wehave_account.call(&worker, fusdc_contract.id(), "new_default_meta")
+        .args_json(serde_json::json!({
+            "owner_id": wehave_id,      // WeHave.test.near gets all the supply
+            "total_supply": U128::from(1000000)
+        }))?
+        .transact()
+        .await?;
+
+    // Create a user account (alice.test.near)
+    let alice = account
+        .create_subaccount(&worker, "alice")
+        .initial_balance(parse_near!("10 N"))
+        .transact()
+        .await?
+        .into_result()?;
+
+    // Create a user account (bob.test.near)
+    let bob = account
+        .create_subaccount(&worker, "bob")
+        .initial_balance(parse_near!("10 N"))
         .transact()
         .await?
         .into_result()?;
 
     // ---------------- ACT ----------------
 
-    // Mint 1 nft --> create new ft in background
-    test_mint_nft(&crowdfund, &contract, &worker).await?;   // crowdfund mints "1"
+    println!("Distributing some USDC from WeHave to Alice and Bob");
 
-    // ---------------- ASSERT ----------------
+    // Distribute some fake usdc to alice.test.near and bob.test.near
+    let alice_id: AccountId = "alice.test.near".parse().unwrap();
+    distribute_fusdc(&worker, &fusdc_contract, &wehave_account, &alice_id).await?;
+    let bob_id: AccountId = "bob.test.near".parse().unwrap();
+    distribute_fusdc(&worker, &fusdc_contract, &wehave_account, &bob_id).await?;
 
-    check_if_nft_minted(&crowdfund, &contract, &worker).await?;
+    println!("Alice creates a ferrari crowdfund for $1000");
+    // Alice creates a ferrari to crowdfund
+    crowdfund_new_item(&worker, &crowdfund_contract, &alice, String::from("ferrari"), 1000).await?;
+    println!("Alice funds the ferrari for 400 usdc");
+    // Alice funds the item
+    fund_item(&worker, &fusdc_contract, &crowdfund_contract, &alice, String::from("0"), String::from("400")).await?;
 
-    check_fungible_token_balance(&niels, &contract, &worker).await?;
+    println!("Bob funds the ferrari for 700 usdc");
+    // Bob funds the item
+    fund_item(&worker, &fusdc_contract, &crowdfund_contract, &bob, String::from("0"), String::from("700")).await?;
 
-    check_fungible_token_balance(&sc_account, &contract, &worker).await?;
 
-    //check_all_accounts(&niels, &contract, &worker).await?;
+    println!("Alice creates a rolex crowdfund for $500");
+    // Alice creates a ferrari to crowdfund
+    crowdfund_new_item(&worker, &crowdfund_contract, &alice, String::from("rolex"), 500).await?;
+    println!("Alice funds the rolex for 200 usdc");
+    // Alice funds the item
+    fund_item(&worker, &fusdc_contract, &crowdfund_contract, &alice, String::from("1"), String::from("200")).await?;
+    println!("Bob funds the rolex for 100 usdc");
+    // Bob funds the item
+    fund_item(&worker, &fusdc_contract, &crowdfund_contract, &bob, String::from("1"), String::from("100")).await?;
+    println!("Bob funds the rolex for 200 usdc");
+    // Bob funds the item
+    fund_item(&worker, &fusdc_contract, &crowdfund_contract, &bob, String::from("1"), String::from("200")).await?;
 
     Ok(())
 }
 
-async fn test_mint_nft(
-    user: &Account,
-    contract: &Contract,
-    worker: &Worker<Sandbox>,
-) -> anyhow::Result<()> {
-
-    println!("user = {:?}", user);
-    println!("contract = {:?}", contract);
-
-    let owner_id: AccountId = "crowdfund.test.near".parse().unwrap();
-
-    println!("Initializing contract at {:?}", contract);
-
-    user.call(&worker, contract.id(), "new_default_meta")
-        .args_json(serde_json::json!({
-            "owner_id": owner_id,
-        }))?
+async fn distribute_fusdc(worker: &Worker<Sandbox>, contract: &Contract, user: &Account, to: &AccountId) -> anyhow::Result<()> {
+    // Register the user by storage deposit
+    let result = user.call(&worker, contract.id(), "storage_deposit")
+        .args_json(json!({"account_id": to}))?
+        .max_gas()
+        .deposit(parse_near!("1 N"))
         .transact()
         .await?;
 
-    println!("Initialized.");
-
-    let token_id: TokenId = String::from("1");
-    let token_metadata: TokenMetadata = TokenMetadata {
-        title: None, // ex. "Arch Nemesis: Mail Carrier" or "Parcel #5055"
-        description: None, // free-form description
-        media: None, // URL to associated media, preferably to decentralized, content-addressed storage
-        media_hash: None, // Base64-encoded sha256 hash of content referenced by the `media` field. Required if `media` is included.
-        copies: None, // number of copies of this set of metadata in existence when token was minted.
-        issued_at: None, // ISO 8601 datetime when token was issued or minted
-        expires_at: None, // ISO 8601 datetime when token expires
-        starts_at: None, // ISO 8601 datetime when token starts being valid
-        updated_at: None, // ISO 8601 datetime when token was last updated
-        extra: None, // anything extra the NFT wants to store on-chain. Can be stringified JSON.
-        reference: None, // URL to an off-chain JSON file with more info.
-        reference_hash: None, //
-    };
-
-    println!("Minting as user {:?} for contract with id {:?}, for token {:?}", user, contract.id(), token_id);
-
-    let result = user.call(&worker, contract.id(), "nft_mint")
-        .args_json(json!({"token_id": token_id, "token_metadata": token_metadata}))?
+    let result = user.call(&worker, contract.id(), "ft_transfer")
+        .args_json(json!({"receiver_id": to, "amount": U128::from(1000)}))?
         .max_gas()
-        .deposit(parse_near!("50 N"))
+        .deposit(parse_near!("1 yN"))
         .transact()
         .await?;
 
@@ -120,37 +148,39 @@ async fn test_mint_nft(
     Ok(())
 }
 
-async fn check_if_nft_minted(user: &Account, contract: &Contract, worker: &Worker<Sandbox>) -> anyhow::Result<()> {
-    let token_id: TokenId = String::from("1");
-
-    let result = user.call(&worker, contract.id(), "nft_token")
-        .args_json(json!({"token_id": token_id}))?
+async fn crowdfund_new_item(worker: &Worker<Sandbox>, contract: &Contract, user: &Account, item_name: String, goal: u128) -> anyhow::Result<()> {
+    let result = user.call(&worker, contract.id(), "new_item")
+        .args_json(json!({"item_name": item_name, "goal": goal}))?
         .transact()
         .await?;
 
     Ok(())
 }
 
-async fn check_fungible_token_balance(user: &Account, contract: &Contract, worker: &Worker<Sandbox>) -> anyhow::Result<()> {
-    let result = user.call(&worker, contract.id(), "check_ft_balance")
-        .args_json(json!({"token_id": "1", "account_id": user.id()}))?
+async fn fund_item(worker: &Worker<Sandbox>, fusdc_contract: &Contract, crowdfund_contract: &Contract, user: &Account, item_index: String, amount: String) -> anyhow::Result<()> {
+    let crowdfund_id: AccountId = "crowdfund.test.near".parse().unwrap();
+
+    // Register the user by storage deposit
+    let result = user.call(&worker, fusdc_contract.id(), "storage_deposit")
+        .args_json(json!({"account_id": crowdfund_id}))?
         .max_gas()
+        .deposit(parse_near!("1 N"))
         .transact()
         .await?;
 
-    println!("TOKEN_BALANCE {:?}: {:#?}", user, result);
-
-    Ok(())
-}
-
-async fn check_all_accounts(user: &Account, contract: &Contract, worker: &Worker<Sandbox>) -> anyhow::Result<()> {
-    let result = user.call(&worker, contract.id(), "get_ft_accounts")
-        .args_json(json!({"token_id": "1"}))?
+    let result = user.call(&worker, fusdc_contract.id(), "ft_transfer_call")
+        .args_json(json!({
+            "receiver_id": crowdfund_id,
+            "amount": amount,
+            "memo": "funding the ferrari",
+            "msg": item_index
+        }))?
         .max_gas()
+        .deposit(parse_near!("1 yN"))
         .transact()
         .await?;
 
-    println!("ALL ACCOUNTS {:?}: {:#?}", user, result);
+    println!("Result: {:?}", result.logs());
 
     Ok(())
 }
