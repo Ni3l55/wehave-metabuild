@@ -105,32 +105,36 @@ impl Contract {
         &mut self,
         token_id: TokenId,
         token_metadata: TokenMetadata,
+        ft_name: String,
+        ft_supply: U128,
+        holders: Vec<AccountId>,
+        shares: Vec<U128>
     ) -> Promise {
         // Only contract owner is allowed to mint (caller = owner)
-        assert_eq!(env::predecessor_account_id(), self.tokens.owner_id, "Unauthorized");
+        assert_eq!(env::predecessor_account_id(), self.tokens.owner_id, "Account unauthorized to mint.");
 
         // TOKENIZE: Create a new fungible token
-        const CODE: &[u8] = include_bytes!("../../tokenized-item/target/wasm32-unknown-unknown/release/wehave_ft.wasm");
+        const CODE: &[u8] = include_bytes!("../../ft/target/wasm32-unknown-unknown/release/wehave_ft.wasm");
 
         let ft_account_id: AccountId = AccountId::new_unchecked(
-          format!("{}.{}", "token", env::current_account_id())
+          format!("{}.{}", ft_name, "wehave.test.near")  // TODO correct mainnet name
         );
 
-        log!("Creating account & deploying contract for ft: {}", ft_account_id);
+        log!("Creating account & deploying contract for new fungible token: {}", ft_account_id);
 
         Promise::new(ft_account_id.clone())
             .create_account()
             .add_full_access_key(env::signer_account_pk())
             .deploy_contract(CODE.to_vec())
-            .transfer(env::attached_deposit())  // Transfer some NEAR for storage
+            .transfer(env::attached_deposit()) // Transfer some NEAR for storage // TODO decide where this storage comes from... us or user?
             .function_call(
                 String::from("new_default_meta"),
-                json!({"owner_id": env::current_account_id(), "total_supply": U128::from(10000)})
+                json!({"owner_id": env::current_account_id(), "total_supply": ft_supply, "holders": holders, "shares": shares})
                     .to_string()
                     .as_bytes()
                     .to_vec(),
                 0,
-                Gas(100*TGAS),
+                Gas(100*TGAS),  // TODO gas costs
             ).then(
                 Self::ext(env::current_account_id())
                 .with_static_gas(Gas(10*TGAS))
@@ -143,11 +147,15 @@ impl Contract {
     #[private]
     #[payable]
     pub fn ft_deploy_callback(&mut self, token_id: TokenId, owner_id: AccountId, token_metadata: TokenMetadata, #[callback_result] call_result: Result<(), PromiseError>) {
-        log!("CALLBACK RESULT: {:?}", call_result);
+        if call_result.is_err() {
+            log!("Something went wrong during tokenization.");
+            // Potentially give back fundings here...
+        } else {
+            log!("Minting item {} for ft account {}", token_id, owner_id);
 
-        log!("Minting item {} for ft account {}", token_id, owner_id);
-        // Add to collection: Mint new item owned by fungible token
-        self.tokens.internal_mint(token_id, owner_id, Some(token_metadata));
+            // Add to collection: Mint new item owned by fungible token
+            self.tokens.internal_mint(token_id, owner_id, Some(token_metadata));
+        }
     }
 
     /// Gateway function for checking the balance of one of the tokenized items through nft contract

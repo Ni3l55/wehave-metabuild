@@ -1214,16 +1214,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tokenized-item"
-version = "1.0.0"
-dependencies = [
- "near-contract-standards",
- "near-sdk",
- "percentage",
- "uint",
-]
-
-[[package]]
 name = "toml"
 version = "0.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1350,6 +1340,16 @@ dependencies = [
  "libc",
  "memory_units",
  "winapi",
+]
+
+[[package]]
+name = "wehave_ft"
+version = "1.0.0"
+dependencies = [
+ "near-contract-standards",
+ "near-sdk",
+ "percentage",
+ "uint",
 ]
 
 [[package]]

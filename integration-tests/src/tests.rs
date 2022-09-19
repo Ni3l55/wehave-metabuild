@@ -15,8 +15,13 @@ async fn main() -> anyhow::Result<()> {
     let wasm_filepath = fs::canonicalize(env::current_dir()?.join(wasm_arg))?;
     let crowdfund_wasm = std::fs::read(wasm_filepath)?;
 
+    // Read NFT WASM from cmd line
+    let wasm_arg_nft: &str = &(env::args().nth(2).unwrap());
+    let wasm_filepath_nft = fs::canonicalize(env::current_dir()?.join(wasm_arg_nft))?;
+    let nft_wasm = std::fs::read(wasm_filepath_nft)?;
+
     // Read fusdc WASM from cmd line
-    let wasm_arg_fusdc: &str = &(env::args().nth(2).unwrap());
+    let wasm_arg_fusdc: &str = &(env::args().nth(3).unwrap());
     let wasm_filepath_fusdc = fs::canonicalize(env::current_dir()?.join(wasm_arg_fusdc))?;
     let fusdc_wasm = std::fs::read(wasm_filepath_fusdc)?;
 
@@ -26,7 +31,7 @@ async fn main() -> anyhow::Result<()> {
     // Create root test account (test.near)
     let account = worker.root_account()?;
 
-    // Create main wehave owner contract (wehave.test.near)
+    // Create main wehave account (wehave.test.near)
     let wehave_account = account
         .create_subaccount(&worker, "wehave")
         .initial_balance(parse_near!("30 N"))
@@ -34,10 +39,10 @@ async fn main() -> anyhow::Result<()> {
         .await?
         .into_result()?;
 
-    // Create crowdfund account in sandbox and deploy WASM (crowdfund.test.near)
+    // Create crowdfund account and deploy contract (crowdfund.test.near)
     let crowdfund_account = account
         .create_subaccount(&worker, "crowdfund")
-        .initial_balance(parse_near!("200 N"))
+        .initial_balance(parse_near!("100 N"))
         .transact()
         .await?
         .into_result()?;
@@ -48,6 +53,27 @@ async fn main() -> anyhow::Result<()> {
 
     // Initialize crowdfund contract
     wehave_account.call(&worker, crowdfund_contract.id(), "new")
+        .transact()
+        .await?;
+
+    // Create NFT account and deploy contract (nft.test.near)
+    let nft_account = account
+        .create_subaccount(&worker, "nft")
+        .initial_balance(parse_near!("200 N"))
+        .transact()
+        .await?
+        .into_result()?;
+
+    let nft_contract = nft_account.deploy(&worker, &nft_wasm)
+        .await?
+        .into_result()?;
+
+    // Initialize NFT contract
+    let crowdfund_id: AccountId = "crowdfund.test.near".parse().unwrap();
+    wehave_account.call(&worker, nft_contract.id(), "new_default_meta")
+        .args_json(serde_json::json!({
+            "owner_id": crowdfund_id    // Owner of NFT contract should be crowdfund; he is the minter
+        }))?
         .transact()
         .await?;
 

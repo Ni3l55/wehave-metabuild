@@ -1,8 +1,13 @@
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::{log, near_bindgen, require, env, AccountId, BorshStorageKey, Balance, CryptoHash, PanicOnDefault, Promise, Gas, PromiseError, PromiseOrValue};
+use near_sdk::{log, near_bindgen, ext_contract, require, env, AccountId, BorshStorageKey, Balance, CryptoHash, PanicOnDefault, Promise, Gas, PromiseError, PromiseOrValue};
 use near_sdk::collections::{UnorderedMap, UnorderedSet};
 use near_sdk::json_types::U128;
 use near_sdk::serde_json::json;
+
+use near_contract_standards::non_fungible_token::metadata::{
+    NFTContractMetadata, NonFungibleTokenMetadataProvider, TokenMetadata, NFT_METADATA_SPEC,
+};
+use near_contract_standards::non_fungible_token::{Token, TokenId};
 
 const TGAS: u64 = 1_000_000_000_000;
 const DEFAULT_TOKEN_SUPPLY: u128 = 1_000_000;
@@ -39,6 +44,11 @@ pub enum StorageKeys {
     Tokenized,
 }
 
+#[ext_contract(ext_nft)]
+trait NonFungibleToken {
+    fn nft_mint(&mut self, token_id: TokenId, token_metadata: TokenMetadata, ft_name: String, ft_supply: U128,holders: Vec<AccountId>, shares: Vec<U128>);
+}
+
 pub trait FungibleTokenReceiver {
     fn ft_on_transfer(&mut self, sender_id: AccountId, amount: U128, msg: String) -> PromiseOrValue<U128>;
 }
@@ -60,6 +70,8 @@ impl Contract {
 
     pub fn new_item(&mut self, item_name: String, goal: u128) {
         require!(goal > 0, "Goal is smaller than zero.");
+
+        // TODO: only allow new crowdfund proposals from certain address(es)
 
         // Potentially change this index in the future. For now just auto increment
         let amt = u128::from(self.items.len());
@@ -90,19 +102,14 @@ impl Contract {
 
     pub fn tokenize_item(&mut self, item_index: u128) -> Promise {
         let crowdfund_progress = self.get_crowdfund_progress(item_index);
-        let crowdfund_goal = self.goals.get(&item_index).expect("Goal not found");
+        let crowdfund_goal = self.get_crowfund_goal(item_index);
 
         require!(crowdfund_progress == crowdfund_goal, "Goal not yet reached.");
         require!(!self.tokenized.contains(&item_index), "This item has already been tokenized.");
 
-        // TOKENIZE: Create a new fungible token
-        const CODE: &[u8] = include_bytes!("../../tokenized-item/target/wasm32-unknown-unknown/release/tokenized_item.wasm");
+        // TOKENIZE: call the custom NFT that creates a token
+        log!("Serializing crowdfund distribution.");
 
-        let ft_account_id: AccountId = AccountId::new_unchecked(
-          format!("{}.{}", self.items.get(&item_index).expect(""), env::current_account_id())
-        );
-
-        log!("Creating account & deploying contract for fungible token: {}", ft_account_id);
         let item_fundings = self.fundings.get(&item_index).expect("Could not get fundings for this item.");
 
         // Make crowdfund distribution serializable -> split funders (holders) & their funds (shares) into 2 Vec's
@@ -115,36 +122,45 @@ impl Contract {
             shares_serializable.push(U128::from(*share));
         }
 
-        log!("Deploying & initializing new fungible token.");
+        // Call NFT mint, pass new fungible token info
+        let nft_account_id: AccountId = "nft.wehave.test.near".parse().unwrap(); // TODO make this configurable --> nft.wehave.testnet or nft.wehave.near
 
-        Promise::new(ft_account_id.clone())
-            .create_account()
-            .deploy_contract(CODE.to_vec())
-            .transfer(DEFAULT_TOKEN_STORAGE)
-            .function_call(
-                   String::from("new_default_meta"),
-                    json!({"owner_id": env::current_account_id(), "total_supply": U128::from(DEFAULT_TOKEN_SUPPLY), "holders": holders_serializable, "shares": shares_serializable})
-                        .to_string()
-                        .as_bytes()
-                        .to_vec(),
-                    0,
-                    Gas(100*TGAS),
-                ).then(
-                    Self::ext(env::current_account_id())
-                    .with_static_gas(Gas(10*TGAS))
-                    .ft_deploy_callback(item_index)
+        log!("Calling nft_mint from crowdfund.");
+
+        let token_metadata = TokenMetadata {
+            title: None,
+            description: None,
+            media: None,
+            media_hash: None,
+            copies: None,
+            issued_at: None,
+            expires_at: None,
+            starts_at: None,
+            updated_at: None,
+            extra: None,
+            reference: None,
+            reference_hash: None,
+        };
+
+        ext_nft::ext(nft_account_id)
+            .with_static_gas(Gas(2*TGAS))   // TODO token metadata!
+            .nft_mint(item_index.to_string(), token_metadata, self.items.get(&item_index).expect("Incorrect item index!"), U128::from(DEFAULT_TOKEN_SUPPLY), holders_serializable, shares_serializable)
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(Gas(1*TGAS))
+                    .nft_mint_callback(item_index)
                 )
     }
 
     #[handle_result]
     #[private]
     #[payable]
-    pub fn ft_deploy_callback(&mut self, item_index: u128, #[callback_result] call_result: Result<(), PromiseError>) {
+    pub fn nft_mint_callback(&mut self, item_index: u128, #[callback_result] call_result: Result<(), PromiseError>) {
         if call_result.is_err() {
-            log!("Something went wrong deploying during tokenization.");
+            log!("Something went wrong during nft_mint.");
             // Potentially give back fundings here...
         } else {
-            log!("Tokenization was succesful!");
+            log!("nft_mint was successful!");
             self.tokenized.insert(&item_index);
         }
     }
@@ -181,7 +197,7 @@ impl FungibleTokenReceiver for Contract {
                 let leftover = item_progress + u128::from(amount) - goal;
                 new_balance = new_balance - leftover;
 
-                // Save the funding which was performed (BEFORE! issuing the token)
+                // Save the funding which was performed (BEFORE! minting the nft / token issue)
                 item_fundings.insert(&sender_id, &new_balance);
                 self.fundings.insert(&item_index, &item_fundings);
                 self.total_fundings.insert(&item_index, &goal);

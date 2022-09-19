@@ -51,7 +51,7 @@ impl Contract {
     pub fn new_default_meta(owner_id: AccountId, total_supply: U128, holders: Vec<AccountId>, shares: Vec<U128>) -> Self {
         log!("Creating a new fungible token.");
 
-        Self::new(
+        Self::new(  // TODO metadata of fungible token
             owner_id,
             total_supply,
             holders,

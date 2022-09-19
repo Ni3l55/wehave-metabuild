@@ -1,5 +1,5 @@
 [package]
-name = "tokenized-item"
+name = "wehave_ft"
 version = "1.0.0"
 authors = ["WeHave <niels@wehave.io>"]
 edition = "2021"

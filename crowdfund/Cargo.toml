@@ -1,5 +1,5 @@
 [package]
-name = "crowdfund"
+name = "wehave_crowdfund"
 version = "1.0.0"
 authors = ["WeHave <niels@wehave.io>"]
 edition = "2021"
@@ -9,6 +9,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 near-sdk = "4.0.0"
+near-contract-standards = "4.0.0"
 uint = { version = "0.9.3", default-features = false }
 
 [profile.release]
