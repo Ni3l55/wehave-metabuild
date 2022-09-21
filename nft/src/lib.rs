@@ -110,6 +110,7 @@ impl Contract {
         holders: Vec<AccountId>,
         shares: Vec<U128>
     ) -> Promise {
+        log!("Arrived at nft_mint");
         // Only contract owner is allowed to mint (caller = owner)
         assert_eq!(env::predecessor_account_id(), self.tokens.owner_id, "Account unauthorized to mint.");
 

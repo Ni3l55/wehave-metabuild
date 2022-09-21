@@ -46,7 +46,7 @@ pub enum StorageKeys {
 
 #[ext_contract(ext_nft)]
 trait NonFungibleToken {
-    fn nft_mint(&mut self, token_id: TokenId, token_metadata: TokenMetadata, ft_name: String, ft_supply: U128,holders: Vec<AccountId>, shares: Vec<U128>);
+    fn nft_mint(&mut self, token_id: TokenId, token_metadata: TokenMetadata, ft_name: String, ft_supply: U128, holders: Vec<AccountId>, shares: Vec<U128>);
 }
 
 pub trait FungibleTokenReceiver {
@@ -158,7 +158,8 @@ impl Contract {
     pub fn nft_mint_callback(&mut self, item_index: u128, #[callback_result] call_result: Result<(), PromiseError>) {
         if call_result.is_err() {
             log!("Something went wrong during nft_mint.");
-            // Potentially give back fundings here...
+            // Decide what to do here
+            // Potentially give back fundings
         } else {
             log!("nft_mint was successful!");
             self.tokenized.insert(&item_index);

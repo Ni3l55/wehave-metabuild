@@ -68,6 +68,8 @@ async fn main() -> anyhow::Result<()> {
         .await?
         .into_result()?;
 
+    println!("Initializing NFT contract.");
+
     // Initialize NFT contract
     let crowdfund_id: AccountId = "crowdfund.test.near".parse().unwrap();
     wehave_account.call(&worker, nft_contract.id(), "new_default_meta")
@@ -88,6 +90,8 @@ async fn main() -> anyhow::Result<()> {
     let fusdc_contract = fusdc_account.deploy(&worker, &fusdc_wasm)
         .await?
         .into_result()?;
+
+    println!("Initializing fake usdc contract.");
 
     // Initialize fake usdc contract for testing
     let wehave_id: AccountId = "wehave.test.near".parse().unwrap();
