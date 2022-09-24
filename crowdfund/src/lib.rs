@@ -11,7 +11,6 @@ use near_contract_standards::non_fungible_token::{Token, TokenId};
 
 const TGAS: u64 = 1_000_000_000_000;
 const DEFAULT_TOKEN_SUPPLY: u128 = 1_000_000;
-const DEFAULT_TOKEN_STORAGE: u128 = 10_000_000_000_000_000_000_000_000; // 10 N
 
 // Define the state of the smart contract
 #[near_bindgen]
@@ -123,7 +122,7 @@ impl Contract {
         }
 
         // Call NFT mint, pass new fungible token info
-        let nft_account_id: AccountId = "nft.wehave.test.near".parse().unwrap(); // TODO make this configurable --> nft.wehave.testnet or nft.wehave.near
+        let nft_account_id: AccountId = "nft.test.near".parse().unwrap(); // TODO make this configurable --> nft.wehave.testnet or nft.wehave.near
 
         log!("Calling nft_mint from crowdfund.");
 
@@ -143,7 +142,7 @@ impl Contract {
         };
 
         ext_nft::ext(nft_account_id)
-            .with_static_gas(Gas(2*TGAS))   // TODO token metadata!
+            .with_static_gas(Gas(10*TGAS))   // TODO token metadata!
             .nft_mint(item_index.to_string(), token_metadata, self.items.get(&item_index).expect("Incorrect item index!"), U128::from(DEFAULT_TOKEN_SUPPLY), holders_serializable, shares_serializable)
             .then(
                 Self::ext(env::current_account_id())
@@ -160,6 +159,7 @@ impl Contract {
             log!("Something went wrong during nft_mint.");
             // Decide what to do here
             // Potentially give back fundings
+            // Or try again
         } else {
             log!("nft_mint was successful!");
             self.tokenized.insert(&item_index);
@@ -204,6 +204,9 @@ impl FungibleTokenReceiver for Contract {
                 self.total_fundings.insert(&item_index, &goal);
 
                 log!("Initiating tokenization...");
+
+                // TODO in the future: just flip a variable here
+                // Tokenize to be called manually by us when item is acquired in warehouse
 
                 self.tokenize_item(item_index.clone());
 
