@@ -52,7 +52,11 @@ async fn main() -> anyhow::Result<()> {
         .into_result()?;
 
     // Initialize crowdfund contract
+    let nft_account_id = "nft.test.near";
     wehave_account.call(&worker, crowdfund_contract.id(), "new")
+        .args_json(json!({
+            "nft_account_id": nft_account_id
+        }))?
         .transact()
         .await?;
 

@@ -16,6 +16,9 @@ const DEFAULT_TOKEN_SUPPLY: u128 = 1_000_000;
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
 pub struct Contract {
+    // The account id of the nft used for tokenization
+    nft_account_id: AccountId,
+
     // Different crowdfunded items (index -> name)
     items: UnorderedMap<u128, String>,
 
@@ -55,10 +58,11 @@ pub trait FungibleTokenReceiver {
 #[near_bindgen]
 impl Contract {
     #[init]
-    pub fn new() -> Self {
+    pub fn new(nft_account_id: AccountId) -> Self {
         require!(!env::state_exists(), "Already initialized");
 
         Self{
+            nft_account_id: nft_account_id,
             items: UnorderedMap::new(StorageKeys::Items),
             goals: UnorderedMap::new(StorageKeys::Goals),
             fundings: UnorderedMap::new(StorageKeys::Fundings),
@@ -121,9 +125,7 @@ impl Contract {
             shares_serializable.push(U128::from(*share));
         }
 
-        // Call NFT mint, pass new fungible token info
-        let nft_account_id: AccountId = "nft.test.near".parse().unwrap(); // TODO make this configurable --> nft.wehave.testnet or nft.wehave.near
-
+        // Call NFT mint on nft contract, pass new fungible token info
         log!("Calling nft_mint from crowdfund.");
 
         let token_metadata = TokenMetadata {
@@ -141,7 +143,7 @@ impl Contract {
             reference_hash: None,
         };
 
-        ext_nft::ext(nft_account_id)
+        ext_nft::ext(self.nft_account_id.clone())
             .with_static_gas(Gas(10*TGAS))   // TODO token metadata!
             .nft_mint(item_index.to_string(), token_metadata, self.items.get(&item_index).expect("Incorrect item index!"), U128::from(DEFAULT_TOKEN_SUPPLY), holders_serializable, shares_serializable)
             .then(
