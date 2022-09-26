@@ -10,46 +10,78 @@ const TGAS: u64 = 1_000_000_000_000;
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
 pub struct Contract {
-    // The NEP-141 item contract that this DAO is about
-    item_account_id: AccountId,
+    // The NEP-141 item account that this DAO is about
+    item_ft: AccountId,
 
-    // The proposals that can be voted on [should we sell, should we lend, ...]
+    // The proposals that can be voted on [should we sell, should we lend, ...], mapped to an index
     proposals: UnorderedMap<u64, String>,
 
     // Per proposal the possible options [0 -> yes, no; 1 -> ok, maybe, idk]
-    options: UnorderedMap<u64, Vector<String>>,
+    options: LookupMap<u64, Vector<String>>,
 
-    // Votes that were cast for each proposal [0 -> ("yes", 0x5), ("no", root.near) ]
-    votes: UnorderedMap<u64, Vector<(String, AccountId)>>
+    // Votes that were cast for each proposal [0 -> niels.near -> 1, 1 -> root.near -> 0]
+    votes: LookupMap<u64, UnorderedMap<AccountId, u64>>,
+
+    // Calculated outcome of the votes, ordered by option index
+    // TODO
 }
 
 // Define storage keys for lists
 #[derive(BorshStorageKey, BorshSerialize)]
 pub enum StorageKeys {
     Proposals,
-    Options { proposal_index_hash: CryptoHash },
-    Votes { proposal_index_hash: CryptoHash}
+    Options,
+    Votes,
+    ProposalVote { proposal_index_hash: CryptoHash}
 }
 
 #[near_bindgen]
 impl Contract {
     #[init]
-    pub fn new(item: AccountId) -> Self {
+    pub fn new(item_ft: AccountId) -> Self {
         require!(!env::state_exists(), "Already initialized");
 
         Self{
-
+            item_ft: item_ft,
+            proposals: UnorderedMap::new(StorageKeys::Proposals),
+            options: LookupMap::new(StorageKeys::Options),
+            votes: LookupMap::new(StorageKeys::Votes),
         }
     }
 
     // Add a new proposal to vote upon
-    pub fn new_proposal(&mut self, question: String, answers: Vec<String>) {
+    pub fn new_proposal(&mut self, question: String, options: Vec<String>) {
+        require!(question.chars().count() > 0); // Question cannot be empty
+        require!(options.len() > 1); // At least 2 options to choose from
 
+        let amt = u128::from(self.proposals.len());
+
+        // Save proposal
+        self.proposals.insert(&amt, &question);
+
+        // Save the options
+        self.options.insert(&amt, Vector::from(options));
+
+        // Make space for the votes on this proposal
+        self.votes.insert(&amt, &UnorderedMap::new(StorageKeys::ProposalVote {
+                                proposal_index_hash: env::sha256_array(&amt.to_be_bytes()),
+                            })
+                         );
     }
 
     // Cast a vote
-    pub fn cast_vote(&mut self, ) {
+    pub fn cast_vote(&mut self, proposal_index: u64, answer_index: u64) {
+        // If there already exists a vote -> overwrite
+        let mut proposal_votes = self.votes.get(&proposal_index).expect("Incorrect proposal index!");
+        proposal_votes.insert(&env::predecessor_account_id(), &answer_index);
+    }
 
+    // Return weighted votes for a certain proposal
+    pub fn calculate_votes(&self, proposal_index: u64) -> Vec<u64> {
+        let proposal_votes = self.votes.get(&proposal_index).expect("Incorrect proposal index!");
+
+        // Calculate by iterating over votes, add weight to vote based on user's amount of item tokens
+        
     }
 }
 
