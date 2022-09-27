@@ -1,6 +1,6 @@
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::{log, near_bindgen, ext_contract, require, env, AccountId, BorshStorageKey, Balance, CryptoHash, PanicOnDefault, Promise, Gas, PromiseError, PromiseOrValue};
-use near_sdk::collections::{UnorderedMap, UnorderedSet};
+use near_sdk::{log, near_bindgen, ext_contract, require, env, AccountId, BorshStorageKey, CryptoHash, PanicOnDefault, Promise};
+use near_sdk::collections::{UnorderedMap, UnorderedSet, LookupMap, Vector};
 use near_sdk::json_types::U128;
 use near_sdk::serde_json::json;
 
@@ -31,8 +31,9 @@ pub struct Contract {
 pub enum StorageKeys {
     Proposals,
     Options,
+    ProposalOption { proposal_index_hash: CryptoHash },
     Votes,
-    ProposalVote { proposal_index_hash: CryptoHash}
+    ProposalVote { proposal_index_hash: CryptoHash }
 }
 
 #[near_bindgen]
@@ -56,13 +57,23 @@ impl Contract {
 
         log!("Creating new proposal: {} with options - {:?}", question, options);
 
-        let amt = u128::from(self.proposals.len());
+        let amt = u64::from(self.proposals.len());
 
         // Save proposal
         self.proposals.insert(&amt, &question);
 
-        // Save the options
-        self.options.insert(&amt, Vector::from(options));
+        // Make space for the options on this proposal
+        let mut options_vector: Vector<String> = Vector::new(StorageKeys::ProposalOption {
+                                            proposal_index_hash: env::sha256_array(&amt.to_be_bytes()),
+                                        });
+
+        // Transform vec to Vector
+        for option in options.iter() {
+            options_vector.push(option);
+        }
+
+        // Save the Vector
+        self.options.insert(&amt, &options_vector);
 
         // Make space for the votes on this proposal
         self.votes.insert(&amt, &UnorderedMap::new(StorageKeys::ProposalVote {
@@ -72,21 +83,21 @@ impl Contract {
     }
 
     // Get all proposals
-    pub fn get_proposals(&self) -> UnorderedMap<u64, String> {
-        self.proposals
-    }
+    //pub fn get_proposals(&self) -> UnorderedMap<u64, String> {
+    //    self.proposals
+    //}
 
     // Get all votes on a certain proposal
-    pub fn get_proposal_votes(&self, &proposal_index: u64) {
-        self.votes.get(&proposal_index).expect("Incorrect proposal index!")
-    }
+    //pub fn get_proposal_votes(&self, proposal_index: u64) -> UnorderedMap<AccountId, u64> {
+    //    self.votes.get(&proposal_index).expect("Incorrect proposal index!")
+    //}
 
     // Cast a vote
     pub fn cast_vote(&mut self, proposal_index: u64, answer_index: u64) {
         log!("Casting vote {} for proposal {}", answer_index, proposal_index);
 
         // If there already exists a vote -> overwrite
-        let mut proposal_votes = self.get_proposal_votes(&proposal_index);
+        let mut proposal_votes = self.votes.get(&proposal_index).expect("Incorrect proposal index!");
         proposal_votes.insert(&env::predecessor_account_id(), &answer_index);
         self.votes.insert(&proposal_index, &proposal_votes);
     }
