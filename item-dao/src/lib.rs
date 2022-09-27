@@ -54,6 +54,8 @@ impl Contract {
         require!(question.chars().count() > 0); // Question cannot be empty
         require!(options.len() > 1); // At least 2 options to choose from
 
+        log!("Creating new proposal: {} with options - {:?}", question, options);
+
         let amt = u128::from(self.proposals.len());
 
         // Save proposal
@@ -69,20 +71,34 @@ impl Contract {
                          );
     }
 
+    // Get all proposals
+    pub fn get_proposals(&self) -> UnorderedMap<u64, String> {
+        self.proposals
+    }
+
+    // Get all votes on a certain proposal
+    pub fn get_proposal_votes(&self, &proposal_index: u64) {
+        self.votes.get(&proposal_index).expect("Incorrect proposal index!")
+    }
+
     // Cast a vote
     pub fn cast_vote(&mut self, proposal_index: u64, answer_index: u64) {
+        log!("Casting vote {} for proposal {}", answer_index, proposal_index);
+
         // If there already exists a vote -> overwrite
-        let mut proposal_votes = self.votes.get(&proposal_index).expect("Incorrect proposal index!");
+        let mut proposal_votes = self.get_proposal_votes(&proposal_index);
         proposal_votes.insert(&env::predecessor_account_id(), &answer_index);
+        self.votes.insert(&proposal_index, &proposal_votes);
     }
 
     // Return weighted votes for a certain proposal
-    pub fn calculate_votes(&self, proposal_index: u64) -> Vec<u64> {
-        let proposal_votes = self.votes.get(&proposal_index).expect("Incorrect proposal index!");
+    // TODO figure out how to get weights atomically
+    //pub fn calculate_votes(&self, proposal_index: u64) -> Vec<u64> {
+    //    let proposal_votes = self.votes.get(&proposal_index).expect("Incorrect proposal index!");
 
         // Calculate by iterating over votes, add weight to vote based on user's amount of item tokens
-        
-    }
+
+    //}
 }
 
 

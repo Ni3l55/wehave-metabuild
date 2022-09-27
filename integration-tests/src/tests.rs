@@ -115,7 +115,7 @@ async fn main() -> anyhow::Result<()> {
         .await?
         .into_result()?;
 
-    // Create a user account (bob.test.near)
+    // Create a second user account (bob.test.near)
     let bob = account
         .create_subaccount(&worker, "bob")
         .initial_balance(parse_near!("10 N"))
@@ -144,6 +144,42 @@ async fn main() -> anyhow::Result<()> {
     // Bob funds the item
     fund_item(&worker, &fusdc_contract, &crowdfund_contract, &bob, String::from("0"), String::from("700")).await?;
 
+    // Create DAO account + deploy DAO contract for ferrari
+    // TODO automate this deployment upon token creation...
+    let ferrari_dao_account = account
+        .create_subaccount(&worker, "ferrari-dao")
+        .initial_balance(parse_near!("30 N"))
+        .transact()
+        .await?
+        .into_result()?;
+
+    // Read ferrari-dao WASM from cmd line
+    let wasm_arg_fdao: &str = &(env::args().nth(4).unwrap());
+    let wasm_filepath_fdao = fs::canonicalize(env::current_dir()?.join(wasm_arg_fdao))?;
+    let fdao_wasm = std::fs::read(wasm_filepath_fdao)?;
+
+    let fdao_contract = ferrari_dao_account.deploy(&worker, &fdao_wasm)
+        .await?
+        .into_result()?;
+
+    // Initialize fdao contract
+    let ferrari_ft_id = "ferarri.nft.test.near".parse().unwrap();
+    wehave_account.call(&worker, fdao_contract.id(), "new")
+        .args_json(serde_json::json!({
+            "item_ft": ferrari_ft_id    // Owner of NFT contract should be crowdfund; he is the minter
+        }))?
+        .transact()
+        .await?;
+
+    // Create a new proposal for selling the ferrari
+    let fdao_id: AccountId = "ferrari-dao.test.near".parse().unwrap();
+    new_dao_proposal_yn(&worker, fdao_contract, &alice, "Sell the ferrari?");
+
+    // Alice votes on the proposal
+    cast_proposal_vote(&worker, &fdao_contract, &alice, 0);
+
+    // Bob votes on the proposal
+    cast_proposal_vote(&worker, &fdao_contract, &alice, 1);
 
     println!("Alice creates a rolex crowdfund for $500");
     // Alice creates a ferrari to crowdfund
@@ -217,4 +253,17 @@ async fn fund_item(worker: &Worker<Sandbox>, fusdc_contract: &Contract, crowdfun
     println!("Result: {:?}", result.logs());
 
     Ok(())
+}
+
+async fn new_dao_proposal_yn(worker: &Worker<Sandbox>, fdao_contract: &Contract, user: &Account, proposal: String) {
+    let result = user.call(&worker, fdao_contract.id(), "new_proposal")
+        .args_json(json!({"question": proposal, "options": ["yes", "no"]}))?
+        .transact()
+        .await?;
+
+    Ok(())
+}
+
+async fn cast_proposal_vote(worker: &Worker<Sandbox>, fdao_contract: &Contract, user: &Account, option: u64) {
+
 }
