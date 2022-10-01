@@ -89,9 +89,18 @@ impl Contract {
     }
 
     // Get all votes on a certain proposal
-    //pub fn get_proposal_votes(&self, proposal_index: u64) -> UnorderedMap<AccountId, u64> {
-    //    self.votes.get(&proposal_index).expect("Incorrect proposal index!")
-    //}
+    pub fn get_proposal_votes(&self, proposal_index: u64) -> Vec<(AccountId, u64)> {
+        let proposal_votes = self.votes.get(&proposal_index).expect("Incorrect proposal index!");
+
+        let voters = proposal_votes.keys_as_vector();
+        let mut result: Vec<(AccountId, u64)> = Vec::new();
+
+        for proposal_vote in proposal_votes.keys_as_vector().iter() {
+            result.push((proposal_vote.clone(), proposal_votes.get(&proposal_vote).expect("Error")));
+        }
+
+        result
+    }
 
     // Cast a vote
     pub fn cast_vote(&mut self, proposal_index: u64, answer_index: u64) {

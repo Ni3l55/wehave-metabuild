@@ -191,6 +191,9 @@ async fn main() -> anyhow::Result<()> {
     println!("Listing ferrari dao proposals");
     list_proposals(&worker, &fdao_contract, &bob).await?;
 
+    println!("Check votes for first ferrari proposal");
+    get_proposal_votes(&worker, &fdao_contract, &bob, 0).await?;
+
     println!("Alice creates a rolex crowdfund for $500");
     // Alice creates a ferrari to crowdfund
     crowdfund_new_item(&worker, &crowdfund_contract, &alice, String::from("rolex"), 500).await?;
@@ -285,6 +288,17 @@ async fn cast_proposal_vote(worker: &Worker<Sandbox>, fdao_contract: &Contract, 
 
 async fn list_proposals(worker: &Worker<Sandbox>, fdao_contract: &Contract, user: &Account) -> anyhow::Result<()> {
     let result = user.call(&worker, fdao_contract.id(), "get_proposals")
+        .transact()
+        .await?;
+
+    println!("{:?}", result);
+
+    Ok(())
+}
+
+async fn get_proposal_votes(worker: &Worker<Sandbox>, fdao_contract: &Contract, user: &Account, proposal: u64) -> anyhow::Result<()> {
+    let result = user.call(&worker, fdao_contract.id(), "get_proposal_votes")
+        .args_json(json!({"proposal_index": proposal}))?
         .transact()
         .await?;
 

@@ -105,7 +105,7 @@ impl Contract {
 
     pub fn tokenize_item(&mut self, item_index: u128) -> Promise {
         let crowdfund_progress = self.get_crowdfund_progress(item_index);
-        let crowdfund_goal = self.get_crowfund_goal(item_index);
+        let crowdfund_goal = self.get_crowdfund_goal(item_index);
 
         require!(crowdfund_progress == crowdfund_goal, "Goal not yet reached.");
         require!(!self.tokenized.contains(&item_index), "This item has already been tokenized.");
