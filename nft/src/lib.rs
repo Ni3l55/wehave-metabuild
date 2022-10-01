@@ -119,7 +119,7 @@ impl Contract {
         const CODE: &[u8] = include_bytes!("../../ft/target/wasm32-unknown-unknown/release/wehave_ft.wasm");
 
         let ft_account_id: AccountId = AccountId::new_unchecked(
-          format!("{}.{}", ft_name, "nft.test.near")  // TODO correct mainnet name
+          format!("{}.{}", ft_name, env::current_account_id())  // TODO use token namings
         );
 
         log!("Creating account & deploying contract for new fungible token: {}", ft_account_id);

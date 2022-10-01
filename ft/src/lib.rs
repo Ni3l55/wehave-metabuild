@@ -106,6 +106,8 @@ impl Contract {
             // Deposit user's share of the supply
             this.token.internal_deposit(&holder, Balance::from(holder_token_supply));
 
+            // TODO figure out how to do storage_deposit to show token in his wallet
+
             log!("{}: giving {} tokens: {}", env::current_account_id(), holder, holder_token_supply);
 
             index = index + 1;

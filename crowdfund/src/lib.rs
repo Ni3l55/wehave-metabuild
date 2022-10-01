@@ -99,7 +99,7 @@ impl Contract {
         self.total_fundings.get(&item_index).expect("Incorrect item index!")
     }
 
-    pub fn get_crowfund_goal(&self, item_index: u128) -> u128 {
+    pub fn get_crowdfund_goal(&self, item_index: u128) -> u128 {
         self.goals.get(&item_index).expect("Incorrect item index!")
     }
 

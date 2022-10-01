@@ -178,15 +178,18 @@ async fn main() -> anyhow::Result<()> {
     println!("Creating new proposal for ferrari.");
     // Create a new proposal for selling the ferrari
     let fdao_id: AccountId = "ferrari-dao.test.near".parse().unwrap();
-    new_dao_proposal_yn(&worker, &fdao_contract, &alice, String::from("Sell the ferrari?"));
+    new_dao_proposal_yn(&worker, &fdao_contract, &alice, String::from("Sell the ferrari?")).await?;
 
     println!("Alice votes yes.");
     // Alice votes on the proposal
-    cast_proposal_vote(&worker, &fdao_contract, &alice, 0, 0);
+    cast_proposal_vote(&worker, &fdao_contract, &alice, 0, 0).await?;
 
     println!("Bob votes no.");
     // Bob votes on the proposal
-    cast_proposal_vote(&worker, &fdao_contract, &bob, 0, 1);
+    cast_proposal_vote(&worker, &fdao_contract, &bob, 0, 1).await?;
+
+    println!("Listing ferrari dao proposals");
+    list_proposals(&worker, &fdao_contract, &bob).await?;
 
     println!("Alice creates a rolex crowdfund for $500");
     // Alice creates a ferrari to crowdfund
@@ -273,9 +276,19 @@ async fn new_dao_proposal_yn(worker: &Worker<Sandbox>, fdao_contract: &Contract,
 
 async fn cast_proposal_vote(worker: &Worker<Sandbox>, fdao_contract: &Contract, user: &Account, proposal: u64, option: u64) -> anyhow::Result<()> {
     let result = user.call(&worker, fdao_contract.id(), "cast_vote")
-        .args_json(json!({"proposal_index": proposal, "option_index": option}))?
+        .args_json(json!({"proposal_index": proposal, "answer_index": option}))?
         .transact()
         .await?;
+
+    Ok(())
+}
+
+async fn list_proposals(worker: &Worker<Sandbox>, fdao_contract: &Contract, user: &Account) -> anyhow::Result<()> {
+    let result = user.call(&worker, fdao_contract.id(), "get_proposals")
+        .transact()
+        .await?;
+
+    println!("{:?}", result);
 
     Ok(())
 }

@@ -13,6 +13,7 @@ pub struct Contract {
     // The NEP-141 item account that this DAO is about
     item_ft: AccountId,
 
+    // TODO probably get rid of theis u64 index. Extra measure if vector was not ordered but probably unnecessary
     // The proposals that can be voted on [should we sell, should we lend, ...], mapped to an index
     proposals: UnorderedMap<u64, String>,
 
@@ -83,9 +84,9 @@ impl Contract {
     }
 
     // Get all proposals
-    //pub fn get_proposals(&self) -> UnorderedMap<u64, String> {
-    //    self.proposals
-    //}
+    pub fn get_proposals(&self) -> Vec<String> {
+        self.proposals.values_as_vector().to_vec()
+    }
 
     // Get all votes on a certain proposal
     //pub fn get_proposal_votes(&self, proposal_index: u64) -> UnorderedMap<AccountId, u64> {
