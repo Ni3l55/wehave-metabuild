@@ -58,7 +58,7 @@ impl Contract {
             shares,
             FungibleTokenMetadata {
                 spec: FT_METADATA_SPEC.to_string(),
-                name: "WeHave tokenized item".to_string(),  // This could be filled based on item description as well
+                name: "WeHave tokenized item".to_string(),  // TODO Take the first part of account name for now
                 symbol: "WHI".to_string(),
                 icon: Some(DATA_IMAGE_SVG_NEAR_ICON.to_string()),
                 reference: None,
@@ -91,8 +91,8 @@ impl Contract {
         let mut index = 0;
 
         for holder in &holders {
-            // Register the crowdfunder as a token holder
-            this.token.internal_register_account(&holder);
+            // Register the crowdfunder as a token holder by doing storage deposit
+            this.token.storage_deposit(&holder);
 
             // Calculate how much to deposit the crowdfunder (holder)
             let holder_funding = shares[index];
@@ -105,8 +105,6 @@ impl Contract {
 
             // Deposit user's share of the supply
             this.token.internal_deposit(&holder, Balance::from(holder_token_supply));
-
-            // TODO figure out how to do storage_deposit to show token in his wallet
 
             log!("{}: giving {} tokens: {}", env::current_account_id(), holder, holder_token_supply);
 
