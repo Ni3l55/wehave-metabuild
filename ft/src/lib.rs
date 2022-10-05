@@ -91,8 +91,9 @@ impl Contract {
         let mut index = 0;
 
         for holder in &holders {
-            // Register the crowdfunder as a token holder by doing storage deposit
-            this.token.storage_deposit(&holder);
+            // Register the crowdfunder as a token holder
+            // TODO: this does not make it visible in wallet
+            this.token.internal_register_account(&holder);
 
             // Calculate how much to deposit the crowdfunder (holder)
             let holder_funding = shares[index];
@@ -104,6 +105,7 @@ impl Contract {
             let holder_token_supply: u128 = holder_percentage.apply_to(total_supply_u128);
 
             // Deposit user's share of the supply
+            // TODO: deposit all to single user, then do transfers? To display in wallet
             this.token.internal_deposit(&holder, Balance::from(holder_token_supply));
 
             log!("{}: giving {} tokens: {}", env::current_account_id(), holder, holder_token_supply);
@@ -140,6 +142,8 @@ mod tests {
 
     use super::*;
 
+    const MINT_STORAGE_COST: u128 = 5870000000000000000000 * 10;
+    const MIN_STORAGE_BALANCE: u128 = 1250000000000000000000;
     const TOTAL_SUPPLY: Balance = 1_000_000_000_000_000;
 
     fn get_context(predecessor_account_id: AccountId) -> VMContextBuilder {
@@ -154,11 +158,26 @@ mod tests {
     #[test]
     fn test_new() {
         let mut context = get_context(accounts(1));
-        testing_env!(context.build());
-        let contract = Contract::new_default_meta(accounts(1).into(), TOTAL_SUPPLY.into());
+        testing_env!(context
+            .attached_deposit(MINT_STORAGE_COST)
+            .build());
+
+        let alice: AccountId = "alice.test.near".parse().unwrap();
+        let bob: AccountId = "bob.test.near".parse().unwrap();
+
+        let holders: Vec<AccountId> = vec!(alice.clone(), bob.clone());
+        let share: u128 = TOTAL_SUPPLY / 2;
+        let shares: Vec<U128> = vec!(U128::from(share.clone()), U128::from(share.clone()));
+
+        let contract = Contract::new_default_meta(accounts(1).into(), TOTAL_SUPPLY.into(), holders, shares);
         testing_env!(context.is_view(true).build());
         assert_eq!(contract.ft_total_supply().0, TOTAL_SUPPLY);
-        assert_eq!(contract.ft_balance_of(accounts(1)).0, TOTAL_SUPPLY);
+        assert_eq!(contract.ft_balance_of(alice.clone()).0, TOTAL_SUPPLY / 2);
+        assert_eq!(contract.ft_balance_of(bob).0, TOTAL_SUPPLY / 2);
+        if let Some(balance) = contract.storage_balance_of(alice) {
+            assert_eq!(balance.total.0, MIN_STORAGE_BALANCE);
+        }
+
     }
 
     #[test]
@@ -169,11 +188,14 @@ mod tests {
         let _contract = Contract::default();
     }
 
-    #[test]
+    //#[test]
     fn test_transfer() {
         let mut context = get_context(accounts(2));
         testing_env!(context.build());
-        let mut contract = Contract::new_default_meta(accounts(2).into(), TOTAL_SUPPLY.into());
+        let holders: Vec<AccountId> = vec!("alice.test.near".parse().unwrap());
+        let shares = vec!(TOTAL_SUPPLY.into());
+
+        let mut contract = Contract::new_default_meta(accounts(2).into(), TOTAL_SUPPLY.into(), holders, shares);
         testing_env!(context
             .storage_usage(env::storage_usage())
             .attached_deposit(contract.storage_balance_bounds().min.into())
