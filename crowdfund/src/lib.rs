@@ -62,11 +62,11 @@ impl Contract {
         require!(!env::state_exists(), "Already initialized");
 
         Self{
-            nft_account_id: nft_account_id,
-            items: UnorderedMap::new(StorageKeys::Items),
-            goals: UnorderedMap::new(StorageKeys::Goals),
-            fundings: UnorderedMap::new(StorageKeys::Fundings),
-            total_fundings: UnorderedMap::new(StorageKeys::TotalFundings),
+            nft_account_id: nft_account_id, // Need some way to save metadata for an item --> could setup metadata object and pass to nft mint later?
+            items: UnorderedMap::new(StorageKeys::Items),   // TODO this could probably just become a vector (ordered anyways)
+            goals: UnorderedMap::new(StorageKeys::Goals),   // Same
+            fundings: UnorderedMap::new(StorageKeys::Fundings), // Same
+            total_fundings: UnorderedMap::new(StorageKeys::TotalFundings),  // Same
             tokenized: UnorderedSet::new(StorageKeys::Tokenized),
         }
     }
@@ -93,6 +93,11 @@ impl Contract {
         // Instantiate the total funding for the item
         let start: u128 = 0;
         self.total_fundings.insert(&amt, &start);
+    }
+
+    // TODO return metadata here as well
+    pub fn get_current_items(&self) -> Vec<String> {
+        self.items.values_as_vector().to_vec()
     }
 
     pub fn get_crowdfund_progress(&self, item_index: u128) -> u128 {
@@ -207,7 +212,7 @@ impl FungibleTokenReceiver for Contract {
 
                 log!("Initiating tokenization...");
 
-                // TODO in the future: just flip a variable here
+                // TODO in the future: just flip a variable here or set a status
                 // Tokenize to be called manually by us when item is acquired in warehouse
 
                 self.tokenize_item(item_index.clone());
@@ -240,7 +245,11 @@ impl FungibleTokenReceiver for Contract {
  */
 #[cfg(test)]
 mod tests {
+    use near_sdk::test_utils::{accounts, VMContextBuilder};
+    use near_sdk::{testing_env, Balance};
+
     use super::*;
+
 
     fn get_context(predecessor_account_id: AccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
@@ -255,7 +264,7 @@ mod tests {
     fn test_new() {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
-        let contract = Contract::new();
+        let contract = Contract::new("test.near".parse().unwrap());
         testing_env!(context.is_view(true).build());
     }
 
@@ -263,9 +272,11 @@ mod tests {
     fn test_new_item() {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
-        let mut contract = Contract::new();
+        let mut contract = Contract::new("test.near".parse().unwrap());
         let sample_item_name = String::from("rolex");
-        contract.new_item(sample_item_name.clone());
+        contract.new_item(sample_item_name.clone(), 1000);
         assert_eq!(contract.items.get(&0), Some(sample_item_name));
+        let the_vec: Vec<String> = vec!(String::from("rolex"));
+        assert_eq!(contract.get_current_items(), the_vec);
     }
 }
