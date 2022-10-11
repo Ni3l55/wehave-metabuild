@@ -6,6 +6,8 @@ use workspaces::{network::Sandbox, Account, Contract, Worker};
 use near_sdk::json_types::U128;
 use near_sdk::AccountId;
 
+use near_contract_standards::non_fungible_token::metadata::TokenMetadata;
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // ---------------- ARRANGE ----------------
@@ -194,19 +196,6 @@ async fn main() -> anyhow::Result<()> {
     println!("Check votes for first ferrari proposal");
     get_proposal_votes(&worker, &fdao_contract, &bob, 0).await?;
 
-    println!("Alice creates a rolex crowdfund for $500");
-    // Alice creates a ferrari to crowdfund
-    crowdfund_new_item(&worker, &crowdfund_contract, &alice, String::from("rolex"), 500).await?;
-    println!("Alice funds the rolex for 200 usdc");
-    // Alice funds the item
-    fund_item(&worker, &fusdc_contract, &crowdfund_contract, &alice, String::from("1"), String::from("200")).await?;
-    println!("Bob funds the rolex for 100 usdc");
-    // Bob funds the item
-    fund_item(&worker, &fusdc_contract, &crowdfund_contract, &bob, String::from("1"), String::from("100")).await?;
-    println!("Bob funds the rolex for 200 usdc");
-    // Bob funds the item
-    fund_item(&worker, &fusdc_contract, &crowdfund_contract, &bob, String::from("1"), String::from("200")).await?;
-
     Ok(())
 }
 
@@ -232,8 +221,24 @@ async fn distribute_fusdc(worker: &Worker<Sandbox>, contract: &Contract, user: &
 }
 
 async fn crowdfund_new_item(worker: &Worker<Sandbox>, contract: &Contract, user: &Account, item_name: String, goal: u128) -> anyhow::Result<()> {
+    let token_metadata = TokenMetadata {
+            title: Some(String::from("Ferrari F40")),
+            description: Some(String::from("Last ferrari built under the supervision of Enzo Ferrari himself.")),
+            media: None,
+            media_hash: None,
+            copies: None,
+            issued_at: None,
+            expires_at: None,
+            starts_at: None,
+            updated_at: None,
+            extra: Some(String::from("ferrarif40")),
+            reference: None,
+            reference_hash: None,
+        };
+
+
     let result = user.call(&worker, contract.id(), "new_item")
-        .args_json(json!({"item_name": item_name, "goal": goal}))?
+        .args_json(json!({"item_metadata": token_metadata, "goal": goal}))?
         .transact()
         .await?;
 
