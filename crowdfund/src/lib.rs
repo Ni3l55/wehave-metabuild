@@ -97,7 +97,6 @@ impl Contract {
         self.total_fundings.insert(&amt, &start);
     }
 
-    // TODO return metadata here as well
     pub fn get_current_items(&self) -> Vec<TokenMetadata> {
         self.items.values_as_vector().to_vec()
     }
@@ -115,7 +114,7 @@ impl Contract {
         let crowdfund_goal = self.get_crowdfund_goal(item_index);
 
         require!(crowdfund_progress == crowdfund_goal, "Goal not yet reached.");
-        require!(!self.tokenized.contains(&item_index), "This item has already been tokenized.");
+        require!(!self.tokenized.contains(&item_index), "This item has already been tokenized.");   // TODO think about what happens if an item is deleted
 
         // TOKENIZE: call the custom NFT that creates a token
         log!("Serializing crowdfund distribution.");

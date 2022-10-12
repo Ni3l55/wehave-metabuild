@@ -146,6 +146,9 @@ async fn main() -> anyhow::Result<()> {
     // Bob funds the item
     fund_item(&worker, &fusdc_contract, &crowdfund_contract, &bob, String::from("0"), String::from("700")).await?;
 
+    println!("Current crowdfund items:");
+    list_crowdfunds(&worker, &crowdfund_contract, &bob).await?;
+
     // Create DAO account + deploy DAO contract for ferrari
     // TODO automate this deployment upon token creation...
     let ferrari_dao_account = account
@@ -241,6 +244,16 @@ async fn crowdfund_new_item(worker: &Worker<Sandbox>, contract: &Contract, user:
         .args_json(json!({"item_metadata": token_metadata, "goal": goal}))?
         .transact()
         .await?;
+
+    Ok(())
+}
+
+async fn list_crowdfunds(worker: &Worker<Sandbox>, contract: &Contract, user: &Account) -> anyhow::Result<()> {
+    let result = user.call(&worker, contract.id(), "get_current_items")
+        .transact()
+        .await?;
+
+    println!("{:?}", result);
 
     Ok(())
 }
