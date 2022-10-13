@@ -4,9 +4,7 @@ use near_sdk::collections::{UnorderedMap, UnorderedSet};
 use near_sdk::json_types::U128;
 use near_sdk::serde_json::json;
 
-use near_contract_standards::non_fungible_token::metadata::{
-    NFTContractMetadata, NonFungibleTokenMetadataProvider, TokenMetadata, NFT_METADATA_SPEC,
-};
+use near_contract_standards::non_fungible_token::metadata::{TokenMetadata};
 use near_contract_standards::non_fungible_token::{Token, TokenId};
 
 const TGAS: u64 = 1_000_000_000_000;
@@ -16,11 +14,14 @@ const DEFAULT_TOKEN_SUPPLY: u128 = 1_000_000;
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
 pub struct Contract {
+    // The base uri to find more info about the crowdfund item
+    base_uri: String,
+
     // The account id of the nft used for tokenization
     nft_account_id: AccountId,
 
-    // Different crowdfunded items (index -> name)
-    items: UnorderedMap<u128, String>,
+    // Different crowdfunded items (index -> metadata) --> Kept as token metadata for minting later
+    items: UnorderedMap<u128, TokenMetadata>,
 
     // Crowdfund goal per item (index -> balance)
     goals: UnorderedMap<u128, u128>,
@@ -35,7 +36,7 @@ pub struct Contract {
     tokenized: UnorderedSet<u128>
 }
 
-// Define storage keys (also for nested collection)
+// Define storage keys for collections and nested collections
 #[derive(BorshStorageKey, BorshSerialize)]
 pub enum StorageKeys {
     Items,
@@ -62,16 +63,17 @@ impl Contract {
         require!(!env::state_exists(), "Already initialized");
 
         Self{
+            base_uri: String::from("test"),
             nft_account_id: nft_account_id,
-            items: UnorderedMap::new(StorageKeys::Items),
-            goals: UnorderedMap::new(StorageKeys::Goals),
-            fundings: UnorderedMap::new(StorageKeys::Fundings),
-            total_fundings: UnorderedMap::new(StorageKeys::TotalFundings),
+            items: UnorderedMap::new(StorageKeys::Items),   // TODO this could probably just become a vector (ordered anyways)
+            goals: UnorderedMap::new(StorageKeys::Goals),   // Same
+            fundings: UnorderedMap::new(StorageKeys::Fundings), // Same
+            total_fundings: UnorderedMap::new(StorageKeys::TotalFundings),  // Same
             tokenized: UnorderedSet::new(StorageKeys::Tokenized),
         }
     }
 
-    pub fn new_item(&mut self, item_name: String, goal: u128) {
+    pub fn new_item(&mut self, item_metadata: TokenMetadata, goal: u128) {
         require!(goal > 0, "Goal is smaller than zero.");
 
         // TODO: only allow new crowdfund proposals from certain address(es)
@@ -79,7 +81,7 @@ impl Contract {
         // Potentially change this index in the future. For now just auto increment
         let amt = u128::from(self.items.len());
 
-        self.items.insert(&amt, &item_name);
+        self.items.insert(&amt, &item_metadata);
 
         // Create goal for item
         self.goals.insert(&amt, &goal);
@@ -95,6 +97,10 @@ impl Contract {
         self.total_fundings.insert(&amt, &start);
     }
 
+    pub fn get_current_items(&self) -> Vec<TokenMetadata> {
+        self.items.values_as_vector().to_vec()
+    }
+
     pub fn get_crowdfund_progress(&self, item_index: u128) -> u128 {
         self.total_fundings.get(&item_index).expect("Incorrect item index!")
     }
@@ -108,7 +114,7 @@ impl Contract {
         let crowdfund_goal = self.get_crowdfund_goal(item_index);
 
         require!(crowdfund_progress == crowdfund_goal, "Goal not yet reached.");
-        require!(!self.tokenized.contains(&item_index), "This item has already been tokenized.");
+        require!(!self.tokenized.contains(&item_index), "This item has already been tokenized.");   // TODO think about what happens if an item is deleted
 
         // TOKENIZE: call the custom NFT that creates a token
         log!("Serializing crowdfund distribution.");
@@ -128,24 +134,11 @@ impl Contract {
         // Call NFT mint on nft contract, pass new fungible token info
         log!("Calling nft_mint from crowdfund.");
 
-        let token_metadata = TokenMetadata {
-            title: None,
-            description: None,
-            media: None,
-            media_hash: None,
-            copies: None,
-            issued_at: None,
-            expires_at: None,
-            starts_at: None,
-            updated_at: None,
-            extra: None,
-            reference: None,
-            reference_hash: None,
-        };
+        let token_metadata = self.items.get(&item_index).expect("Incorrect item index!");
 
         ext_nft::ext(self.nft_account_id.clone())
             .with_static_gas(Gas(10*TGAS))   // TODO token metadata!
-            .nft_mint(item_index.to_string(), token_metadata, self.items.get(&item_index).expect("Incorrect item index!"), U128::from(DEFAULT_TOKEN_SUPPLY), holders_serializable, shares_serializable)
+            .nft_mint(item_index.to_string(), token_metadata.clone(), token_metadata.extra.expect("Unable to mint NFT: Fungible token name is missing in extra field."), U128::from(DEFAULT_TOKEN_SUPPLY), holders_serializable, shares_serializable)
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(Gas(1*TGAS))
@@ -207,7 +200,7 @@ impl FungibleTokenReceiver for Contract {
 
                 log!("Initiating tokenization...");
 
-                // TODO in the future: just flip a variable here
+                // TODO in the future: just flip a variable here or set a status
                 // Tokenize to be called manually by us when item is acquired in warehouse
 
                 self.tokenize_item(item_index.clone());
@@ -240,7 +233,11 @@ impl FungibleTokenReceiver for Contract {
  */
 #[cfg(test)]
 mod tests {
+    use near_sdk::test_utils::{accounts, VMContextBuilder};
+    use near_sdk::{testing_env, Balance};
+
     use super::*;
+
 
     fn get_context(predecessor_account_id: AccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
@@ -255,7 +252,7 @@ mod tests {
     fn test_new() {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
-        let contract = Contract::new();
+        let contract = Contract::new("test.near".parse().unwrap());
         testing_env!(context.is_view(true).build());
     }
 
@@ -263,9 +260,11 @@ mod tests {
     fn test_new_item() {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
-        let mut contract = Contract::new();
+        let mut contract = Contract::new("test.near".parse().unwrap());
         let sample_item_name = String::from("rolex");
-        contract.new_item(sample_item_name.clone());
+        contract.new_item(sample_item_name.clone(), 1000);
         assert_eq!(contract.items.get(&0), Some(sample_item_name));
+        let the_vec: Vec<String> = vec!(String::from("rolex"));
+        assert_eq!(contract.get_current_items(), the_vec);
     }
 }

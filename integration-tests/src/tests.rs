@@ -6,6 +6,8 @@ use workspaces::{network::Sandbox, Account, Contract, Worker};
 use near_sdk::json_types::U128;
 use near_sdk::AccountId;
 
+use near_contract_standards::non_fungible_token::metadata::TokenMetadata;
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // ---------------- ARRANGE ----------------
@@ -190,10 +192,36 @@ async fn distribute_fusdc(worker: &Worker<Sandbox>, contract: &Contract, user: &
 }
 
 async fn crowdfund_new_item(worker: &Worker<Sandbox>, contract: &Contract, user: &Account, item_name: String, goal: u128) -> anyhow::Result<()> {
+    let token_metadata = TokenMetadata {
+            title: Some(String::from("Ferrari F40")),
+            description: Some(String::from("Last ferrari built under the supervision of Enzo Ferrari himself.")),
+            media: None,
+            media_hash: None,
+            copies: None,
+            issued_at: None,
+            expires_at: None,
+            starts_at: None,
+            updated_at: None,
+            extra: Some(String::from("ferrarif40")),
+            reference: None,
+            reference_hash: None,
+        };
+
+
     let result = user.call(&worker, contract.id(), "new_item")
-        .args_json(json!({"item_name": item_name, "goal": goal}))?
+        .args_json(json!({"item_metadata": token_metadata, "goal": goal}))?
         .transact()
         .await?;
+
+    Ok(())
+}
+
+async fn list_crowdfunds(worker: &Worker<Sandbox>, contract: &Contract, user: &Account) -> anyhow::Result<()> {
+    let result = user.call(&worker, contract.id(), "get_current_items")
+        .transact()
+        .await?;
+
+    println!("{:?}", result);
 
     Ok(())
 }
