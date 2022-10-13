@@ -40,8 +40,9 @@ pub struct Contract {
 const DATA_IMAGE_SVG_NEAR_ICON: &str = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 288 288'%3E%3Cg id='l' data-name='l'%3E%3Cpath d='M187.58,79.81l-30.1,44.69a3.2,3.2,0,0,0,4.75,4.2L191.86,103a1.2,1.2,0,0,1,2,.91v80.46a1.2,1.2,0,0,1-2.12.77L102.18,77.93A15.35,15.35,0,0,0,90.47,72.5H87.34A15.34,15.34,0,0,0,72,87.84V201.16A15.34,15.34,0,0,0,87.34,216.5h0a15.35,15.35,0,0,0,13.08-7.31l30.1-44.69a3.2,3.2,0,0,0-4.75-4.2L96.14,186a1.2,1.2,0,0,1-2-.91V104.61a1.2,1.2,0,0,1,2.12-.77l89.55,107.23a15.35,15.35,0,0,0,11.71,5.43h3.13A15.34,15.34,0,0,0,216,201.16V87.84A15.34,15.34,0,0,0,200.66,72.5h0A15.35,15.35,0,0,0,187.58,79.81Z'/%3E%3C/g%3E%3C/svg%3E";
 
 const TGAS: u64 = 1000000000000;
-const DEFAULT_TOKEN_STORAGE: u128 = 5_000_000_000_000_000_000_000_000; // 5 N, probably not needed
-const REGISTER_ACCOUNT_STORAGE: u128 = 1_250_000_000_000_000_000_000; // 0.00125 N
+const DEFAULT_TOKEN_STORAGE: u128 = 10_000_000_000_000_000_000_000_000; // 10 N, for token
+const DEFAULT_DAO_STORAGE: u128 = 10_000_000_000_000_000_000_000_000; // 10 N, for dao
+const MINT_STORAGE_COST: u128 = 1_000_000_000_000_000_000_000_000; // 1 N
 
 #[derive(BorshSerialize, BorshStorageKey)]
 enum StorageKey {
@@ -119,7 +120,7 @@ impl Contract {
         assert_eq!(env::predecessor_account_id(), self.tokens.owner_id, "Account unauthorized to mint.");
 
         // TOKENIZE: Create a new fungible token
-        const CODE: &[u8] = include_bytes!("../../ft/target/wasm32-unknown-unknown/release/wehave_ft.wasm");
+        const FT_CODE: &[u8] = include_bytes!("../../ft/target/wasm32-unknown-unknown/release/wehave_ft.wasm");
 
         let ft_account_id: AccountId = AccountId::new_unchecked(
           format!("{}.{}", ft_name, env::current_account_id())  // TODO use token namings
@@ -127,12 +128,10 @@ impl Contract {
 
         log!("Creating account & deploying contract for new fungible token: {}", ft_account_id);
 
-        log!("{}", REGISTER_ACCOUNT_STORAGE);
-
         Promise::new(ft_account_id.clone())
             .create_account()
             .add_full_access_key(env::signer_account_pk()) // Crowdfund becomes owner.. ??
-            .deploy_contract(CODE.to_vec())
+            .deploy_contract(FT_CODE.to_vec())
             .transfer(DEFAULT_TOKEN_STORAGE) // Transfer some NEAR for storage from the NFT contract itself
             .function_call(
                 String::from("new_default_meta"),
@@ -141,11 +140,11 @@ impl Contract {
                     .as_bytes()
                     .to_vec(),
                 0,
-                Gas(10*TGAS),
+                Gas(20*TGAS),
             ).then(
                 Self::ext(env::current_account_id())
-                .with_static_gas(Gas(5*TGAS))
-                .with_attached_deposit(DEFAULT_TOKEN_STORAGE / 10)   // Transfer some NEAR for minting cost
+                .with_static_gas(Gas(7*TGAS))
+                .with_attached_deposit(MINT_STORAGE_COST)   // Transfer some NEAR for minting cost
                 .ft_deploy_callback(token_id, ft_account_id, token_metadata)
             )
     }
@@ -161,7 +160,53 @@ impl Contract {
             log!("Minting item {} for ft account {}", token_id, owner_id);
 
             // Add to collection: Mint new item owned by fungible token
-            self.tokens.internal_mint(token_id, owner_id, Some(token_metadata));
+            self.tokens.internal_mint(token_id, owner_id.clone(), Some(token_metadata));
+
+            // TODO: mint only after dao?
+
+            // Deploy dao for token
+            //let dao_account_id: AccountId = AccountId::new_unchecked(
+              //format!("dao.{}", owner_id)
+            //);
+
+            let dao_account_id: AccountId = "abcd.test.near".parse().unwrap();
+
+            log!("Creating account & deploying DAO: {}", dao_account_id);
+
+            // TOKENIZE: Create a new fungible token
+            const DAO_CODE: &[u8] = include_bytes!("../../item-dao/target/wasm32-unknown-unknown/release/wehave_item_dao.wasm");
+
+            log!("Really creating");
+
+            Promise::new(dao_account_id.clone())
+                .create_account()
+                .add_full_access_key(env::signer_account_pk()) // Crowdfund --> nft becomes owner?
+                .deploy_contract(DAO_CODE.to_vec())
+                .transfer(DEFAULT_DAO_STORAGE) // Transfer some NEAR for storage from the FT contract itself
+                .function_call(
+                    String::from("new"),
+                    json!({"item_ft": env::current_account_id()})
+                        .to_string()
+                        .as_bytes()
+                        .to_vec(),
+                    0,
+                    Gas(3*TGAS),
+                ).then(
+                    Self::ext(env::current_account_id())
+                    .with_static_gas(Gas(1*TGAS))
+                    .item_dao_deploy_callback()
+                );
+        }
+    }
+
+    #[handle_result]
+    #[private]
+    pub fn item_dao_deploy_callback(&mut self, #[callback_result] call_result: Result<(), PromiseError>) {
+        if call_result.is_err() {
+            log!("Could not deploy");
+            // Potentially give back fundings here...
+        } else {
+            log!("NICE");
         }
     }
 }

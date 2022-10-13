@@ -43,6 +43,8 @@ impl Contract {
     pub fn new(item_ft: AccountId) -> Self {
         require!(!env::state_exists(), "Already initialized");
 
+        log!("New item DAO created.");
+
         Self{
             item_ft: item_ft,
             proposals: UnorderedMap::new(StorageKeys::Proposals),

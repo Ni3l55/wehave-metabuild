@@ -144,68 +144,26 @@ async fn main() -> anyhow::Result<()> {
     // Bob funds the item
     fund_item(&worker, &fusdc_contract, &crowdfund_contract, &bob, String::from("0"), String::from("700")).await?;
 
-    // Create DAO account + deploy DAO contract for ferrari
-    // TODO automate this deployment upon token creation...
-    let ferrari_dao_account = account
-        .create_subaccount(&worker, "ferrari-dao")
-        .initial_balance(parse_near!("30 N"))
-        .transact()
-        .await?
-        .into_result()?;
-
-    // Read ferrari-dao WASM from cmd line
-    let wasm_arg_fdao: &str = &(env::args().nth(4).unwrap());
-    let wasm_filepath_fdao = fs::canonicalize(env::current_dir()?.join(wasm_arg_fdao))?;
-    let fdao_wasm = std::fs::read(wasm_filepath_fdao)?;
-
-    let fdao_contract = ferrari_dao_account.deploy(&worker, &fdao_wasm)
-        .await?
-        .into_result()?;
-
-
-    println!("Initializing ferrari DAO");
-
-    // Initialize fdao contract
-    let ferrari_ft_id: AccountId = "ferarri.nft.test.near".parse().unwrap();
-    wehave_account.call(&worker, fdao_contract.id(), "new")
-        .args_json(serde_json::json!({
-            "item_ft": ferrari_ft_id    // Owner of NFT contract should be crowdfund; he is the minter
-        }))?
-        .transact()
-        .await?;
-
+    // FT should be created, distributed & DAO should be created
 
     println!("Creating new proposal for ferrari.");
     // Create a new proposal for selling the ferrari
-    let fdao_id: AccountId = "ferrari-dao.test.near".parse().unwrap();
-    new_dao_proposal_yn(&worker, &fdao_contract, &alice, String::from("Sell the ferrari?")).await?;
+    let fdao_id: AccountId = "dao.ferrari.nft.test.near".parse().unwrap();
+    //new_dao_proposal_yn(&worker, &fdao_contract, &alice, String::from("Sell the ferrari?")).await?;
 
     println!("Alice votes yes.");
     // Alice votes on the proposal
-    cast_proposal_vote(&worker, &fdao_contract, &alice, 0, 0).await?;
+    //cast_proposal_vote(&worker, &fdao_id, &alice, 0, 0).await?;
 
     println!("Bob votes no.");
     // Bob votes on the proposal
-    cast_proposal_vote(&worker, &fdao_contract, &bob, 0, 1).await?;
+    //cast_proposal_vote(&worker, &fdao_contract, &bob, 0, 1).await?;
 
     println!("Listing ferrari dao proposals");
-    list_proposals(&worker, &fdao_contract, &bob).await?;
+    //list_proposals(&worker, &fdao_contract, &bob).await?;
 
     println!("Check votes for first ferrari proposal");
-    get_proposal_votes(&worker, &fdao_contract, &bob, 0).await?;
-
-    println!("Alice creates a rolex crowdfund for $500");
-    // Alice creates a ferrari to crowdfund
-    crowdfund_new_item(&worker, &crowdfund_contract, &alice, String::from("rolex"), 500).await?;
-    println!("Alice funds the rolex for 200 usdc");
-    // Alice funds the item
-    fund_item(&worker, &fusdc_contract, &crowdfund_contract, &alice, String::from("1"), String::from("200")).await?;
-    println!("Bob funds the rolex for 100 usdc");
-    // Bob funds the item
-    fund_item(&worker, &fusdc_contract, &crowdfund_contract, &bob, String::from("1"), String::from("100")).await?;
-    println!("Bob funds the rolex for 200 usdc");
-    // Bob funds the item
-    fund_item(&worker, &fusdc_contract, &crowdfund_contract, &bob, String::from("1"), String::from("200")).await?;
+    //get_proposal_votes(&worker, &fdao_contract, &bob, 0).await?;
 
     Ok(())
 }
