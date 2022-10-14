@@ -75,7 +75,6 @@ impl Contract {
 
     pub fn new_item(&mut self, item_metadata: TokenMetadata, goal: u128) {
         require!(goal > 0, "Goal is smaller than zero.");
-
         // TODO: only allow new crowdfund proposals from certain address(es)
 
         // Potentially change this index in the future. For now just auto increment
@@ -137,7 +136,7 @@ impl Contract {
         let token_metadata = self.items.get(&item_index).expect("Incorrect item index!");
 
         ext_nft::ext(self.nft_account_id.clone())
-            .with_static_gas(Gas(10*TGAS))   // TODO token metadata!
+            .with_static_gas(Gas(10*TGAS))   // TODO fix token ID. this can't be the item index because of deletions etc. Has to be next token in line
             .nft_mint(item_index.to_string(), token_metadata.clone(), token_metadata.extra.expect("Unable to mint NFT: Fungible token name is missing in extra field."), U128::from(DEFAULT_TOKEN_SUPPLY), holders_serializable, shares_serializable)
             .then(
                 Self::ext(env::current_account_id())

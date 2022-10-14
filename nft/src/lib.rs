@@ -99,6 +99,11 @@ impl Contract {
         }
     }
 
+    pub fn set_new_owner(&mut self, new_owner_id: AccountId) {
+        assert_eq!(env::predecessor_account_id(), env::current_account_id(), "Account unauthorized to set new owner."); // With PK of this account you can reset owner
+        self.tokens.owner_id = new_owner_id;
+    }
+
     /// Mint a new token with ID=`token_id` belonging to `token_owner_id`.
     ///
     /// Since this example implements metadata, it also requires per-token metadata to be provided
