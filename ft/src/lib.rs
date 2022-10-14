@@ -52,21 +52,19 @@ impl Contract {
     /// Initializes the contract with the given total supply owned by the given `owner_id` with
     #[init]
     pub fn new_default_meta(owner_id: AccountId, total_supply: U128, holders: Vec<AccountId>, shares: Vec<U128>) -> Self {
-        log!("Creating a new fungible token.");
-
-        Self::new(  // TODO metadata of fungible token
+        Self::new(
             owner_id,
             total_supply,
             holders,
             shares,
             FungibleTokenMetadata {
                 spec: FT_METADATA_SPEC.to_string(),
-                name: "WeHave tokenized item".to_string(),  // TODO Take the first part of account name for now
+                name: "WeHave tokenized item".to_string(),
                 symbol: "WHI".to_string(),
                 icon: Some(DATA_IMAGE_SVG_NEAR_ICON.to_string()),
                 reference: None,
                 reference_hash: None,
-                decimals: 24,
+                decimals: 8,
             },
         )
     }
@@ -75,6 +73,8 @@ impl Contract {
     /// the given fungible token metadata.
     #[init]
     pub fn new(owner_id: AccountId, total_supply: U128, holders: Vec<AccountId>, shares: Vec<U128>, metadata: FungibleTokenMetadata) -> Self {
+        log!("Creating a new fungible token.");
+
         require!(!env::state_exists(), "Already initialized");
         metadata.assert_valid();
 

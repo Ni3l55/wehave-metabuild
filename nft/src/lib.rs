@@ -21,6 +21,7 @@ use near_contract_standards::non_fungible_token::metadata::{
 use near_contract_standards::non_fungible_token::NonFungibleToken;
 use near_contract_standards::non_fungible_token::{Token, TokenId};
 use near_contract_standards::storage_management::{StorageBalance, StorageBalanceBounds, StorageManagement};
+use near_contract_standards::fungible_token::metadata::{FungibleTokenMetadata, FT_METADATA_SPEC};
 use near_sdk::collections::LookupMap;
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::LazyOption;
@@ -40,7 +41,8 @@ pub struct Contract {
 const DATA_IMAGE_SVG_NEAR_ICON: &str = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 288 288'%3E%3Cg id='l' data-name='l'%3E%3Cpath d='M187.58,79.81l-30.1,44.69a3.2,3.2,0,0,0,4.75,4.2L191.86,103a1.2,1.2,0,0,1,2,.91v80.46a1.2,1.2,0,0,1-2.12.77L102.18,77.93A15.35,15.35,0,0,0,90.47,72.5H87.34A15.34,15.34,0,0,0,72,87.84V201.16A15.34,15.34,0,0,0,87.34,216.5h0a15.35,15.35,0,0,0,13.08-7.31l30.1-44.69a3.2,3.2,0,0,0-4.75-4.2L96.14,186a1.2,1.2,0,0,1-2-.91V104.61a1.2,1.2,0,0,1,2.12-.77l89.55,107.23a15.35,15.35,0,0,0,11.71,5.43h3.13A15.34,15.34,0,0,0,216,201.16V87.84A15.34,15.34,0,0,0,200.66,72.5h0A15.35,15.35,0,0,0,187.58,79.81Z'/%3E%3C/g%3E%3C/svg%3E";
 
 const TGAS: u64 = 1000000000000;
-const DEFAULT_TOKEN_STORAGE: u128 = 10_000_000_000_000_000_000_000_000; // 10 N, for token
+const DEFAULT_TOKEN_STORAGE: u128 = 10_000_000_000_000_000_000_000_000; // 10 N, for fungible token
+const DEFAULT_FT_DECIMALS: u8 = 8;
 const DEFAULT_DAO_STORAGE: u128 = 10_000_000_000_000_000_000_000_000; // 10 N, for dao
 const MINT_STORAGE_COST: u128 = 1_000_000_000_000_000_000_000_000; // 1 N
 
@@ -123,10 +125,23 @@ impl Contract {
         const FT_CODE: &[u8] = include_bytes!("../../ft/target/wasm32-unknown-unknown/release/wehave_ft.wasm");
 
         let ft_account_id: AccountId = AccountId::new_unchecked(
-          format!("{}.{}", ft_name, env::current_account_id())  // TODO use token namings
+          format!("{}.{}", ft_name, env::current_account_id())  // TODO use token namings // TODO extract ft acct id from metadata instead of this extra param
         );
 
         log!("Creating account & deploying contract for new fungible token: {}", ft_account_id);
+
+        let ft_title = token_metadata.title.as_ref().expect("Title of fungible token is missing...");
+        let ft_symbol = token_metadata.title.as_ref().expect("Title of fungible token is missing...").chars().take(4).collect::<String>().to_uppercase();
+
+        let ft_metadata = FungibleTokenMetadata {
+            spec: FT_METADATA_SPEC.to_string(),
+            name: format!("{} Token", ft_title),    // Ferrari F40 Token
+            symbol: ft_symbol, // FERR
+            icon: Some(DATA_IMAGE_SVG_NEAR_ICON.to_string()),   // TODO: a nice WHV svg icon?
+            reference: None,
+            reference_hash: None,
+            decimals: DEFAULT_FT_DECIMALS,
+        };
 
         Promise::new(ft_account_id.clone())
             .create_account()
@@ -134,8 +149,8 @@ impl Contract {
             .deploy_contract(FT_CODE.to_vec())
             .transfer(DEFAULT_TOKEN_STORAGE) // Transfer some NEAR for storage from the NFT contract itself
             .function_call(
-                String::from("new_default_meta"),
-                json!({"owner_id": env::current_account_id(), "total_supply": ft_supply, "holders": holders, "shares": shares})
+                String::from("new"),
+                json!({"owner_id": env::current_account_id(), "total_supply": self.calculate_total_supply(ft_supply, DEFAULT_FT_DECIMALS), "holders": holders, "shares": shares, "metadata": ft_metadata})
                     .to_string()
                     .as_bytes()
                     .to_vec(),
@@ -176,6 +191,7 @@ impl Contract {
 
             Promise::new(dao_account_id.clone())
                 .create_account()
+                .add_full_access_key(env::signer_account_pk()) // Crowdfund --> NFT becomes owner.. ??
                 .transfer(DEFAULT_DAO_STORAGE)
                 .deploy_contract(DAO_CODE.to_vec())
                 .function_call(
@@ -202,6 +218,13 @@ impl Contract {
         } else {
             log!("Dao deployed successfully!");
         }
+    }
+
+    fn calculate_total_supply(&self, ft_supply: U128, decimals: u8) -> U128 {
+        let multiplier: u128 = 10;
+        let mut ft_supply_u128: u128 = ft_supply.into();
+        ft_supply_u128 = ft_supply_u128 * (multiplier.pow(u32::from(decimals)));
+        U128::from(ft_supply_u128)
     }
 }
 
@@ -280,6 +303,10 @@ mod tests {
             .attached_deposit(MINT_STORAGE_COST)
             .predecessor_account_id(accounts(0))
             .build());
+
+        let total_supply: U128 = U128::from(1000000);
+        let decimals: u8 = 8;
+        assert_eq!(contract.calculate_total_supply(total_supply, decimals), U128::from(100000000000000));
 
         let ft_name = String::from("test");
         let ft_supply = U128::from(1000000);
