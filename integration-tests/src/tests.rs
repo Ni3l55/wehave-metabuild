@@ -250,6 +250,7 @@ async fn fund_item(worker: &Worker<Sandbox>, fusdc_contract: &Contract, crowdfun
         .await?;
 
     println!("Result: {:?}", result.logs());
+    println!("Outcome: {:#?}", result);
 
     Ok(())
 }

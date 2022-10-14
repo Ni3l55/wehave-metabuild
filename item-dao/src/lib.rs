@@ -43,7 +43,7 @@ impl Contract {
     pub fn new(item_ft: AccountId) -> Self {
         require!(!env::state_exists(), "Already initialized");
 
-        log!("New item DAO created.");
+        log!("Creating new item DAO.");
 
         Self{
             item_ft: item_ft,

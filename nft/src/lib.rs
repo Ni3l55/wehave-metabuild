@@ -165,32 +165,27 @@ impl Contract {
             // TODO: mint only after dao?
 
             // Deploy dao for token
-            //let dao_account_id: AccountId = AccountId::new_unchecked(
-              //format!("dao.{}", owner_id)
-            //);
-
-            let dao_account_id: AccountId = "abcd.test.near".parse().unwrap();
+            let dao_account_id: AccountId = AccountId::new_unchecked(
+                format!("dao-{}", owner_id) // dao-ferrarif40.nft.test.near? Can't use a '.' since not in that contract
+             );
 
             log!("Creating account & deploying DAO: {}", dao_account_id);
 
             // TOKENIZE: Create a new fungible token
             const DAO_CODE: &[u8] = include_bytes!("../../item-dao/target/wasm32-unknown-unknown/release/wehave_item_dao.wasm");
 
-            log!("Really creating");
-
             Promise::new(dao_account_id.clone())
                 .create_account()
-                .add_full_access_key(env::signer_account_pk()) // Crowdfund --> nft becomes owner?
+                .transfer(DEFAULT_DAO_STORAGE)
                 .deploy_contract(DAO_CODE.to_vec())
-                .transfer(DEFAULT_DAO_STORAGE) // Transfer some NEAR for storage from the FT contract itself
                 .function_call(
                     String::from("new"),
-                    json!({"item_ft": env::current_account_id()})
+                    json!({"item_ft": owner_id})
                         .to_string()
                         .as_bytes()
                         .to_vec(),
                     0,
-                    Gas(3*TGAS),
+                    Gas(5*TGAS),    // TODO measure gas stuff
                 ).then(
                     Self::ext(env::current_account_id())
                     .with_static_gas(Gas(1*TGAS))
@@ -203,10 +198,9 @@ impl Contract {
     #[private]
     pub fn item_dao_deploy_callback(&mut self, #[callback_result] call_result: Result<(), PromiseError>) {
         if call_result.is_err() {
-            log!("Could not deploy");
-            // Potentially give back fundings here...
+            log!("Could not deploy DAO");
         } else {
-            log!("NICE");
+            log!("Dao deployed successfully!");
         }
     }
 }
