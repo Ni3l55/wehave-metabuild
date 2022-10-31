@@ -1,6 +1,6 @@
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::{log, near_bindgen, ext_contract, require, env, AccountId, BorshStorageKey, Balance, CryptoHash, PanicOnDefault, Promise, Gas, PromiseError, PromiseOrValue};
-use near_sdk::collections::{UnorderedMap, UnorderedSet};
+use near_sdk::collections::{UnorderedMap, UnorderedSet, Vector};
 use near_sdk::json_types::U128;
 use near_sdk::serde_json::json;
 
@@ -17,23 +17,29 @@ pub struct Contract {
     // The base uri to find more info about the crowdfund item
     base_uri: String,
 
+    // The stablecoin accepted as payment
+    accepted_coin: AccountId,
+
     // The account id of the nft used for tokenization
     nft_account_id: AccountId,
 
-    // Different crowdfunded items (index -> metadata) --> Kept as token metadata for minting later
-    items: UnorderedMap<u128, TokenMetadata>,
+    // Different crowdfunded items, kept as metadata for minting later
+    items: Vector<TokenMetadata>,
 
-    // Crowdfund goal per item (index -> balance)
-    goals: UnorderedMap<u128, u128>,
+    // Crowdfund goal per item (indexed balance)
+    goals: Vector<u128>,
 
     // Overview of fundings per item (index -> account -> USDC funded)
-    fundings: UnorderedMap<u128, UnorderedMap<AccountId, Balance>>,
+    fundings: Vector<UnorderedMap<AccountId, Balance>>,
 
-    // Summary of total funding per item for (index -> balance)
-    total_fundings: UnorderedMap<u128, u128>,
+    // Summary of total funding per item for (indexed balance)
+    total_fundings: Vector<u128>,
 
-    // List of item indices that have been tokenized (token deployed, different from just goal reached)
-    tokenized: UnorderedSet<u128>
+    // Per crowdfund, the status it's in
+    status: Vector<CrowdfundStatus>,
+
+    // List of accounts allowed to create, delete a crowdfund
+    crowdfund_operators: Vector<AccountId>
 }
 
 // Define storage keys for collections and nested collections
@@ -44,12 +50,28 @@ pub enum StorageKeys {
     Fundings,
     Subfunding { item_index_hash: CryptoHash },
     TotalFundings,
-    Tokenized,
+    Status,
+    CrowdfundOperators
+}
+
+// See smart contract documentation for the meaning of all these
+#[derive(BorshStorageKey, BorshSerialize, BorshDeserialize, PartialEq)]
+pub enum CrowdfundStatus {
+    Created,
+    Rejected,
+    InProgress,
+    OutOfTime,
+    Buying,
+    FailedBuying,
+    Bought,
+    Transporting,
+    FailedTransporting,
+    Tokenized
 }
 
 #[ext_contract(ext_nft)]
 trait NonFungibleToken {
-    fn nft_mint(&mut self, token_id: TokenId, token_metadata: TokenMetadata, ft_name: String, ft_supply: U128, holders: Vec<AccountId>, shares: Vec<U128>);
+    fn nft_mint(&mut self, token_metadata: TokenMetadata, ft_supply: U128, holders: Vec<AccountId>, shares: Vec<U128>);
 }
 
 pub trait FungibleTokenReceiver {
@@ -59,66 +81,85 @@ pub trait FungibleTokenReceiver {
 #[near_bindgen]
 impl Contract {
     #[init]
-    pub fn new(nft_account_id: AccountId) -> Self {
+    pub fn new(nft_account_id: AccountId, accepted_coin: AccountId) -> Self {
         require!(!env::state_exists(), "Already initialized");
 
         Self{
             base_uri: String::from("test"),
+            accepted_coin: accepted_coin,
             nft_account_id: nft_account_id,
-            items: UnorderedMap::new(StorageKeys::Items),   // TODO this could probably just become a vector (ordered anyways)
-            goals: UnorderedMap::new(StorageKeys::Goals),   // Same
-            fundings: UnorderedMap::new(StorageKeys::Fundings), // Same
-            total_fundings: UnorderedMap::new(StorageKeys::TotalFundings),  // Same
-            tokenized: UnorderedSet::new(StorageKeys::Tokenized),
+            items: Vector::new(StorageKeys::Items),
+            goals: Vector::new(StorageKeys::Goals),
+            fundings: Vector::new(StorageKeys::Fundings),
+            total_fundings: Vector::new(StorageKeys::TotalFundings),
+            status: Vector::new(StorageKeys::Status),
+            crowdfund_operators: Vector::new(StorageKeys::CrowdfundOperators),
         }
     }
 
     pub fn new_item(&mut self, item_metadata: TokenMetadata, goal: u128) {
+        require!(self.caller_is_operator(), "Caller is not allowed to create a crowdfund.");
         require!(goal > 0, "Goal is smaller than zero.");
-        // TODO: only allow new crowdfund proposals from certain address(es)
 
-        // Potentially change this index in the future. For now just auto increment
-        let amt = u128::from(self.items.len());
-
-        self.items.insert(&amt, &item_metadata);
+        self.items.push(&item_metadata);    // TODO Check / set extra field in metadata as UID
 
         // Create goal for item
-        self.goals.insert(&amt, &goal);
+        self.goals.push(&goal);
 
         // Instantiate the funding map for this item
-        self.fundings.insert(&amt, &UnorderedMap::new(StorageKeys::Subfunding {
+        let amt = u128::from(self.fundings.len());
+        self.fundings.push(&UnorderedMap::new(StorageKeys::Subfunding {
                                     item_index_hash: env::sha256_array(&amt.to_be_bytes()),
                                 })
                             );
 
-        // Instantiate the total funding for the item
+        // Instantiate the total funding for this item
         let start: u128 = 0;
-        self.total_fundings.insert(&amt, &start);
+        self.total_fundings.push(&start);
+
+        // Instantiate the status for this item TODO put in created first
+        let crowdfund_status = CrowdfundStatus::InProgress;
+        self.status.push(&crowdfund_status);
+    }
+
+    pub fn add_operator(&mut self, operator: AccountId) {
+        require!(env::predecessor_account_id() == env::current_account_id(), "Only this contract itself can add an operator.");
+        self.crowdfund_operators.push(&operator);
+    }
+
+    fn caller_is_operator(&self) -> bool {
+        for operator in self.crowdfund_operators.iter() {
+            if env::predecessor_account_id() == operator {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     pub fn get_current_items(&self) -> Vec<TokenMetadata> {
-        self.items.values_as_vector().to_vec()
+        self.items.to_vec()
     }
 
-    pub fn get_crowdfund_progress(&self, item_index: u128) -> u128 {
-        self.total_fundings.get(&item_index).expect("Incorrect item index!")
+    pub fn get_crowdfund_progress(&self, item_index: u64) -> u128 {
+        self.total_fundings.get(item_index).expect("Incorrect item index!")
     }
 
-    pub fn get_crowdfund_goal(&self, item_index: u128) -> u128 {
-        self.goals.get(&item_index).expect("Incorrect item index!")
+    pub fn get_crowdfund_goal(&self, item_index: u64) -> u128 {
+        self.goals.get(item_index).expect("Incorrect item index!")
     }
 
-    pub fn tokenize_item(&mut self, item_index: u128) -> Promise {
+    pub fn tokenize_item(&mut self, item_index: u64) -> Promise {
         let crowdfund_progress = self.get_crowdfund_progress(item_index);
         let crowdfund_goal = self.get_crowdfund_goal(item_index);
 
         require!(crowdfund_progress == crowdfund_goal, "Goal not yet reached.");
-        require!(!self.tokenized.contains(&item_index), "This item has already been tokenized.");   // TODO think about what happens if an item is deleted
+        require!(!(self.status.get(item_index).unwrap() == CrowdfundStatus::Tokenized), "This item has already been tokenized."); // TODO only allow tokenization when transporting
 
         // TOKENIZE: call the custom NFT that creates a token
         log!("Serializing crowdfund distribution.");
 
-        let item_fundings = self.fundings.get(&item_index).expect("Could not get fundings for this item.");
+        let item_fundings = self.fundings.get(item_index).unwrap();
 
         // Make crowdfund distribution serializable -> split funders (holders) & their funds (shares) into 2 Vec's
         let holders_serializable = item_fundings.keys_as_vector().to_vec();
@@ -133,11 +174,11 @@ impl Contract {
         // Call NFT mint on nft contract, pass new fungible token info
         log!("Calling nft_mint from crowdfund.");
 
-        let token_metadata = self.items.get(&item_index).expect("Incorrect item index!");
+        let token_metadata = self.items.get(item_index).unwrap();
 
         ext_nft::ext(self.nft_account_id.clone())
-            .with_static_gas(Gas(10*TGAS))   // TODO fix token ID. this can't be the item index because of deletions etc. Has to be next token in line
-            .nft_mint(item_index.to_string(), token_metadata.clone(), token_metadata.extra.expect("Unable to mint NFT: Fungible token name is missing in extra field."), U128::from(DEFAULT_TOKEN_SUPPLY), holders_serializable, shares_serializable)
+            .with_static_gas(Gas(10*TGAS))
+            .nft_mint(token_metadata.clone(), U128::from(DEFAULT_TOKEN_SUPPLY), holders_serializable, shares_serializable)
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(Gas(1*TGAS))
@@ -148,7 +189,7 @@ impl Contract {
     #[handle_result]
     #[private]
     #[payable]
-    pub fn nft_mint_callback(&mut self, item_index: u128, #[callback_result] call_result: Result<(), PromiseError>) {
+    pub fn nft_mint_callback(&mut self, item_index: u64, #[callback_result] call_result: Result<(), PromiseError>) {
         if call_result.is_err() {
             log!("Something went wrong during nft_mint.");
             // Decide what to do here
@@ -156,7 +197,7 @@ impl Contract {
             // Or try again
         } else {
             log!("nft_mint was successful!");
-            self.tokenized.insert(&item_index);
+            self.status.replace(item_index, &CrowdfundStatus::Tokenized);
         }
     }
 }
@@ -165,23 +206,23 @@ impl Contract {
 impl FungibleTokenReceiver for Contract {
     // When an account sends usdc to the crowdfund
     fn ft_on_transfer(&mut self, sender_id: AccountId, amount: U128, msg: String) -> PromiseOrValue<U128> {
-        // TODO: only accept code from a certain stablecoin when decided
+        require!(env::predecessor_account_id() == self.accepted_coin, "Not accepting this coin as payment.");
 
         log!("{:?} tokens transferred from {} with msg: {}", amount, sender_id, msg);
 
         // Check the item_index which is in the message
-        let item_index: u128 = msg.parse().unwrap();
+        let item_index: u64 = msg.parse().unwrap();
 
         // Check crowdfund information
         let item_progress = self.get_crowdfund_progress(item_index);
-        let goal = self.goals.get(&item_index).expect("Unable to retrieve goal of item.");
+        let goal = self.goals.get(item_index).unwrap();
 
-        assert!(item_progress < goal, "The goal has already been reached.");
+        require!(item_progress < goal, "The goal has already been reached.");
 
         log!("Funding item {} with progress {} and goal {}", item_index, item_progress, goal);
 
         // Register the funding for the item
-        let mut item_fundings = self.fundings.get(&item_index).expect("Incorrect item index!");
+        let mut item_fundings = self.fundings.get(item_index).unwrap();
         let mut funded_by_sender: Balance = item_fundings.get(&sender_id).unwrap_or_else(|| 0);
 
         if let Some(mut new_balance) = funded_by_sender.checked_add(amount.into()) {
@@ -194,12 +235,13 @@ impl FungibleTokenReceiver for Contract {
 
                 // Save the funding which was performed (BEFORE! minting the nft / token issue)
                 item_fundings.insert(&sender_id, &new_balance);
-                self.fundings.insert(&item_index, &item_fundings);
-                self.total_fundings.insert(&item_index, &goal);
+                self.fundings.replace(item_index, &item_fundings);
+                self.total_fundings.replace(item_index, &goal);
 
                 log!("Initiating tokenization...");
 
-                // TODO in the future: just flip a variable here or set a status
+                self.status.replace(item_index, &CrowdfundStatus::Transporting);
+                // TODO don't immediately tokenize.
                 // Tokenize to be called manually by us when item is acquired in warehouse
 
                 self.tokenize_item(item_index.clone());
@@ -207,13 +249,13 @@ impl FungibleTokenReceiver for Contract {
                 // Return leftover token
                 return PromiseOrValue::Value(U128::from(leftover));
             } else {
-                let mut item_total_funding = self.total_fundings.get(&item_index).expect("Total funding not found.");
+                let mut item_total_funding = self.total_fundings.get(item_index).unwrap();
                 item_total_funding = item_progress + u128::from(amount);
 
                 // Save the funding which was performed
                 item_fundings.insert(&sender_id, &new_balance);
-                self.fundings.insert(&item_index, &item_fundings);
-                self.total_fundings.insert(&item_index, &item_total_funding);
+                self.fundings.replace(item_index, &item_fundings);
+                self.total_fundings.replace(item_index, &item_total_funding);
 
                 log!("Total for item {} is now at {}", item_index, item_total_funding);
 

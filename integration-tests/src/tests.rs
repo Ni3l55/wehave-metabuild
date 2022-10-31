@@ -55,9 +55,11 @@ async fn main() -> anyhow::Result<()> {
 
     // Initialize crowdfund contract
     let nft_account_id = "nft.test.near";
+    let accepted_coin = "fusdc.test.near";
     wehave_account.call(&worker, crowdfund_contract.id(), "new")
         .args_json(json!({
-            "nft_account_id": nft_account_id
+            "nft_account_id": nft_account_id,
+            "accepted_coin": accepted_coin
         }))?
         .transact()
         .await?;
@@ -135,6 +137,9 @@ async fn main() -> anyhow::Result<()> {
     let bob_id: AccountId = "bob.test.near".parse().unwrap();
     distribute_fusdc(&worker, &fusdc_contract, &wehave_account, &bob_id).await?;
 
+    println!("Alice becomes a crowdfund operator");
+    add_crowdfund_operator(&worker, &crowdfund_contract, &crowdfund_account, &alice_id).await?;
+
     println!("Alice creates a ferrari crowdfund for $1000");
     // Alice creates a ferrari to crowdfund
     crowdfund_new_item(&worker, &crowdfund_contract, &alice, String::from("ferrari"), 1000).await?;
@@ -148,9 +153,23 @@ async fn main() -> anyhow::Result<()> {
 
     // FT should be created, distributed & DAO should be created
 
+    println!("Bob becomes a crowdfund operator");
+    add_crowdfund_operator(&worker, &crowdfund_contract, &crowdfund_account, &bob_id).await?;
+    println!("bob creates a rolex crowdfund for $2000");
+    // bob creates a rolex to crowdfund
+    crowdfund_new_item(&worker, &crowdfund_contract, &bob, String::from("rolex"), 2000).await?;
+    println!("Alice funds the ferrari for 400 usdc");
+    // Alice funds the item
+    fund_item(&worker, &fusdc_contract, &crowdfund_contract, &alice, String::from("1"), String::from("400")).await?;
+
+    println!("Bob funds the ferrari for 1900 usdc");
+    // Bob funds the item
+    fund_item(&worker, &fusdc_contract, &crowdfund_contract, &bob, String::from("1"), String::from("1900")).await?;
+
+
     println!("Creating new proposal for ferrari.");
     // Create a new proposal for selling the ferrari
-    let fdao_id: AccountId = "dao.ferrari.nft.test.near".parse().unwrap();
+    let fdao_id: AccountId = "item0.nft.test.near".parse().unwrap();
     //new_dao_proposal_yn(&worker, &fdao_contract, &alice, String::from("Sell the ferrari?")).await?;
 
     println!("Alice votes yes.");
@@ -180,13 +199,22 @@ async fn distribute_fusdc(worker: &Worker<Sandbox>, contract: &Contract, user: &
         .await?;
 
     let result = user.call(&worker, contract.id(), "ft_transfer")
-        .args_json(json!({"receiver_id": to, "amount": U128::from(1000)}))?
+        .args_json(json!({"receiver_id": to, "amount": U128::from(3000)}))?
         .max_gas()
         .deposit(parse_near!("1 yN"))
         .transact()
         .await?;
 
     println!("{:?}", result.logs());
+
+    Ok(())
+}
+
+async fn add_crowdfund_operator(worker: &Worker<Sandbox>, contract: &Contract, cfUser: &Account, operator: &AccountId) -> anyhow::Result<()> {
+    let result = cfUser.call(&worker, contract.id(), "add_operator")
+        .args_json(json!({"operator": operator}))?
+        .transact()
+        .await?;
 
     Ok(())
 }
