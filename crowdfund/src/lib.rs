@@ -14,7 +14,7 @@ const DEFAULT_TOKEN_SUPPLY: u128 = 1_000_000;
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
 pub struct Contract {
-    // TODO Should have implemented this by creating Crowdfund struct, then create list of crowdfunds :(
+    // TODO Should have implemented this by creating Crowdfund struct, then create Vector of crowdfunds :(
 
     // The base uri to find more info about the crowdfund item
     base_uri: String,
@@ -22,8 +22,14 @@ pub struct Contract {
     // The stablecoin accepted as payment
     accepted_coin: AccountId,
 
-    // The account id of the nft used for tokenization
+    // The account id of the items collection used for tokenization
     nft_account_id: AccountId,
+
+    // The default fee % taken on crowdfunds
+    default_fee_percentage: f64,
+
+    // The fee % to be paid per item
+    item_fee_percentage: Vector<f64>,
 
     // Different crowdfunded items, kept as metadata for minting later
     items: Vector<TokenMetadata>,
@@ -33,6 +39,9 @@ pub struct Contract {
 
     // Overview of fundings per item (index -> account -> USDC funded)
     fundings: Vector<UnorderedMap<AccountId, Balance>>,
+
+    // Overview of actual USDC fees paid per item (index -> account -> USDC fees paid)
+    fees_paid: Vector<UnorderedMap<AccountId, Balance>>,
 
     // Summary of total funding per item for (indexed balance)
     total_fundings: Vector<u128>,
@@ -47,10 +56,13 @@ pub struct Contract {
 // Define storage keys for collections and nested collections
 #[derive(BorshStorageKey, BorshSerialize)]
 pub enum StorageKeys {
+    ItemFees,
     Items,
     Goals,
     Fundings,
     Subfunding { item_index_hash: CryptoHash },
+    FeesPaid,
+    SubFeesPaid { item_index_hash: CryptoHash},
     TotalFundings,
     Status,
     CrowdfundOperators
@@ -89,9 +101,12 @@ impl Contract {
             base_uri: String::from("test"),
             accepted_coin: accepted_coin,
             nft_account_id: nft_account_id,
+            default_fee_percentage: 4,
+            item_fee_percentage: Vector::new(StorageKeys::ItemFees),
             items: Vector::new(StorageKeys::Items),
             goals: Vector::new(StorageKeys::Goals),
             fundings: Vector::new(StorageKeys::Fundings),
+            fees_paid: Vector::new(FeesPaid),
             total_fundings: Vector::new(StorageKeys::TotalFundings),
             status: Vector::new(StorageKeys::Status),
             crowdfund_operators: Vector::new(StorageKeys::CrowdfundOperators),
@@ -107,9 +122,18 @@ impl Contract {
         // Create goal for item
         self.goals.push(&goal);
 
+        // Create fees for item
+        self.item_fee_percentage.push(self.default_fee_percentage.clone());
+
         // Instantiate the funding map for this item
         let amt = u128::from(self.fundings.len());
         self.fundings.push(&UnorderedMap::new(StorageKeys::Subfunding {
+                                    item_index_hash: env::sha256_array(&amt.to_be_bytes()),
+                                })
+                            );
+
+        // Instantiate the fees map for this item
+        self.fees_paid.push(&UnorderedMap::new(StorageKeys::SubFeesPaid {
                                     item_index_hash: env::sha256_array(&amt.to_be_bytes()),
                                 })
                             );
@@ -144,6 +168,10 @@ impl Contract {
 
     pub fn get_crowdfund_progress(&self, item_index: u64) -> u128 {
         self.total_fundings.get(item_index).expect("Incorrect item index!")
+    }
+
+    pub fn get_crowdfund_fee_percentage(&self, item_index: u64) -> f64 {
+        self.item_fee_percentage.get(item_index).expect("Incorrect item index!")
     }
 
     pub fn get_crowdfund_goal(&self, item_index: u64) -> u128 {
@@ -207,7 +235,7 @@ impl Contract {
 impl FungibleTokenReceiver for Contract {
     // When an account sends usdc to the crowdfund
     fn ft_on_transfer(&mut self, sender_id: AccountId, amount: U128, msg: String) -> PromiseOrValue<U128> {
-        require!(env::predecessor_account_id() == self.accepted_coin, "Not accepting this coin as payment.");
+        require!(env::predecessor_account_id() == self.accepted_coin, "This coin is not accepted as payment.");
 
         log!("{:?} tokens transferred from {} with msg: {}", amount, sender_id, msg);
 
@@ -217,6 +245,8 @@ impl FungibleTokenReceiver for Contract {
         // Check crowdfund information
         let item_progress = self.get_crowdfund_progress(item_index);
         let goal = self.goals.get(item_index).unwrap();
+
+        // TODO substract the percentage fee from the amount
 
         require!(item_progress < goal, "The goal has already been reached.");
 
