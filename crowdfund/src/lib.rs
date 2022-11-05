@@ -233,65 +233,79 @@ impl Contract {
 
 #[near_bindgen]
 impl FungibleTokenReceiver for Contract {
-    // When an account sends usdc to the crowdfund
     fn ft_on_transfer(&mut self, sender_id: AccountId, amount: U128, msg: String) -> PromiseOrValue<U128> {
         require!(env::predecessor_account_id() == self.accepted_coin, "This coin is not accepted as payment.");
-
-        log!("{:?} tokens transferred from {} with msg: {}", amount, sender_id, msg);
-
-        // Check the item_index which is in the message
         let item_index: u64 = msg.parse().unwrap();
 
         // Check crowdfund information
         let item_progress = self.get_crowdfund_progress(item_index);
         let goal = self.goals.get(item_index).unwrap();
+        require!(item_progress < goal, "The goal has already been reached for this item.");
 
-        // TODO substract the percentage fee from the amount
+        // Substract the fee from the amount
+        let fee_percentage = Percentage::from(self.item_fee_percentage);
+        let fee_amount = fee_percentage.apply_to(amount);
+        let netto_amount = amount - fee_amount;
 
-        require!(item_progress < goal, "The goal has already been reached.");
+        log!("Funding item {} for {} (Fee: {}) with progress {} and goal {}", item_index, netto_amount, fee_amount, item_progress, goal);
 
-        log!("Funding item {} with progress {} and goal {}", item_index, item_progress, goal);
-
-        // Register the funding for the item
+        // Get existing funds & fees from sender, or put on 0
         let mut item_fundings = self.fundings.get(item_index).unwrap();
+        let mut item_fees_paid = self.fees_paid.get(item_index).unwrap();
         let mut funded_by_sender: Balance = item_fundings.get(&sender_id).unwrap_or_else(|| 0);
+        let mut fees_paid_by_sender: Balance = item_fees_paid.get(&sender_id).unwrap_or_else(|| 0);
 
-        if let Some(mut new_balance) = funded_by_sender.checked_add(amount.into()) {
-            if (item_progress + u128::from(amount)) >= goal {
-                log!("CROWFUNDING GOAL REACHED");
+        // Calculate his new contributions
+        let mut new_funded = funded_by_sender.checked_add(netto_amount.into()).unwrap();
+        let mut new_fees_paid = fees_paid_by_sender.checked_add(fee_amount.into()).unwrap();
 
-                // if this surpasses the limit, give back what's leftover
-                let leftover = item_progress + u128::from(amount) - goal;
-                new_balance = new_balance - leftover;
+        if (item_progress + u128::from(netto_amount)) >= goal {
+            log!("CROWFUNDING GOAL REACHED");
 
-                // Save the funding which was performed (BEFORE! minting the nft / token issue)
-                item_fundings.insert(&sender_id, &new_balance);
-                self.fundings.replace(item_index, &item_fundings);
-                self.total_fundings.replace(item_index, &goal);
+            // if this surpasses the limit, give back what's leftover: calculate how much fees to give back as well
+            let netto_leftover = item_progress + u128::from(netto_amount) - goal;
+            new_funded = new_funded - netto_leftover;
 
-                log!("Initiating tokenization...");
+            let fee_leftover = Percentage::from(netto_leftover/netto_amount).apply_to(fee_amount);
+            new_fees_paid = new_fees_paid - fee_leftover;
 
-                self.status.replace(item_index, &CrowdfundStatus::Transporting);
-                // TODO don't immediately tokenize.
-                // Tokenize to be called manually by us when item is acquired in warehouse
+            let leftover = netto_leftover + fee_leftover;
 
-                self.tokenize_item(item_index.clone());
+            // Save the funding that is performed (BEFORE! issuing the token)
+            item_fundings.insert(&sender_id, &new_funded);
+            self.fundings.replace(item_index, &item_fundings);
+            self.total_fundings.replace(item_index, &goal);
 
-                // Return leftover token
-                return PromiseOrValue::Value(U128::from(leftover));
-            } else {
-                let mut item_total_funding = self.total_fundings.get(item_index).unwrap();
-                item_total_funding = item_progress + u128::from(amount);
+            // Save the fees that are paid
+            fees_paid.insert(&sender_id, &new_fees_paid);
+            self.fees_paid.replace(item_index, &fees_paid);
 
-                // Save the funding which was performed
-                item_fundings.insert(&sender_id, &new_balance);
-                self.fundings.replace(item_index, &item_fundings);
-                self.total_fundings.replace(item_index, &item_total_funding);
+            log!("Initiating tokenization...");
 
-                log!("Total for item {} is now at {}", item_index, item_total_funding);
+            self.status.replace(item_index, &CrowdfundStatus::Transporting);
+            // TODO don't immediately tokenize.
+            // Tokenize to be called manually by us when item is acquired in warehouse
 
-                return PromiseOrValue::Value(U128::from(0));
-            }
+            self.tokenize_item(item_index.clone());
+
+            // Return leftover token
+            return PromiseOrValue::Value(U128::from(leftover));
+        } else {
+            let mut item_total_funding = self.total_fundings.get(item_index).unwrap();
+            item_total_funding = item_progress + u128::from(netto_amount);
+
+            // Save the funding that is performed
+            item_fundings.insert(&sender_id, &new_funded);
+            self.fundings.replace(item_index, &item_fundings);
+            self.total_fundings.replace(item_index, &item_total_funding);
+
+            // Save the fees that are paid
+            fees_paid.insert(&sender_id, &new_fees_paid);
+            self.fees_paid.replace(item_index, &fees_paid);
+
+            log!("Total for item {} is now at {}", item_index, item_total_funding);
+
+            return PromiseOrValue::Value(U128::from(0));
         }
 
         log!("Unable to fund item. Returning tokens.");
