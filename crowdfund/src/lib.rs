@@ -14,6 +14,8 @@ const DEFAULT_TOKEN_SUPPLY: u128 = 1_000_000;
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
 pub struct Contract {
+    // TODO Should have implemented this by creating Crowdfund struct, then create list of crowdfunds :(
+
     // The base uri to find more info about the crowdfund item
     base_uri: String,
 
@@ -63,7 +65,6 @@ pub enum CrowdfundStatus {
     OutOfTime,
     Buying,
     FailedBuying,
-    Bought,
     Transporting,
     FailedTransporting,
     Tokenized
