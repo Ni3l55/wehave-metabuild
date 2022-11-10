@@ -7,6 +7,8 @@ use near_sdk::serde_json::json;
 use near_contract_standards::non_fungible_token::metadata::{TokenMetadata};
 use near_contract_standards::non_fungible_token::{Token, TokenId};
 
+use percentage::Percentage;
+
 const TGAS: u64 = 1_000_000_000_000;
 const DEFAULT_TOKEN_SUPPLY: u128 = 1_000_000;
 
@@ -101,12 +103,12 @@ impl Contract {
             base_uri: String::from("test"),
             accepted_coin: accepted_coin,
             nft_account_id: nft_account_id,
-            default_fee_percentage: 4,
+            default_fee_percentage: 4.0,
             item_fee_percentage: Vector::new(StorageKeys::ItemFees),
             items: Vector::new(StorageKeys::Items),
             goals: Vector::new(StorageKeys::Goals),
             fundings: Vector::new(StorageKeys::Fundings),
-            fees_paid: Vector::new(FeesPaid),
+            fees_paid: Vector::new(StorageKeys::FeesPaid),
             total_fundings: Vector::new(StorageKeys::TotalFundings),
             status: Vector::new(StorageKeys::Status),
             crowdfund_operators: Vector::new(StorageKeys::CrowdfundOperators),
@@ -123,7 +125,7 @@ impl Contract {
         self.goals.push(&goal);
 
         // Create fees for item
-        self.item_fee_percentage.push(self.default_fee_percentage.clone());
+        self.item_fee_percentage.push(&self.default_fee_percentage);
 
         // Instantiate the funding map for this item
         let amt = u128::from(self.fundings.len());
@@ -277,8 +279,8 @@ impl FungibleTokenReceiver for Contract {
             self.total_fundings.replace(item_index, &goal);
 
             // Save the fees that are paid
-            fees_paid.insert(&sender_id, &new_fees_paid);
-            self.fees_paid.replace(item_index, &fees_paid);
+            item_fees_paid.insert(&sender_id, &new_fees_paid);
+            self.fees_paid.replace(item_index, &item_fees_paid);
 
             log!("Initiating tokenization...");
 
