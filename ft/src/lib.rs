@@ -102,7 +102,6 @@ impl Contract {
             let holder_token_supply: u128 = holder_percentage.apply_to(total_supply_u128);
 
             // Deposit user's share of the supply
-            // TODO: deposit all to single user, then do transfers? To display in wallet
             this.token.internal_deposit(&holder, Balance::from(holder_token_supply));
 
             log!("{}: giving {} tokens: {}", env::current_account_id(), holder, holder_token_supply);

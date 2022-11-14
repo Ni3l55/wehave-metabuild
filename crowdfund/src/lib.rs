@@ -39,6 +39,9 @@ pub struct Contract {
     // Crowdfund goal per item (indexed balance)
     goals: Vector<u128>,
 
+    // The decimal amount for interpreting the amounts
+    decimals: u8,
+
     // Overview of fundings per item (index -> account -> USDC funded)
     fundings: Vector<UnorderedMap<AccountId, Balance>>,
 
@@ -245,9 +248,9 @@ impl FungibleTokenReceiver for Contract {
         require!(item_progress < goal, "The goal has already been reached for this item.");
 
         // Substract the fee from the amount
-        let fee_percentage = Percentage::from(self.item_fee_percentage);
-        let fee_amount = fee_percentage.apply_to(amount);
-        let netto_amount = amount - fee_amount;
+        let fee_percentage = Percentage::from_decimal(self.item_fee_percentage.get(item_index).unwrap() / 100.0); // Only way to do float percentage
+        let fee_amount = fee_percentage.apply_to(amount.into());
+        let netto_amount = amount - fee_amount.into();
 
         log!("Funding item {} for {} (Fee: {}) with progress {} and goal {}", item_index, netto_amount, fee_amount, item_progress, goal);
 
@@ -269,9 +272,9 @@ impl FungibleTokenReceiver for Contract {
             new_funded = new_funded - netto_leftover;
 
             let fee_leftover = Percentage::from(netto_leftover/netto_amount).apply_to(fee_amount);
-            new_fees_paid = new_fees_paid - fee_leftover;
+            new_fees_paid = new_fees_paid - fee_leftover.into();
 
-            let leftover = netto_leftover + fee_leftover;
+            let leftover = netto_leftover + fee_leftover.into();
 
             // Save the funding that is performed (BEFORE! issuing the token)
             item_fundings.insert(&sender_id, &new_funded);
@@ -302,8 +305,8 @@ impl FungibleTokenReceiver for Contract {
             self.total_fundings.replace(item_index, &item_total_funding);
 
             // Save the fees that are paid
-            fees_paid.insert(&sender_id, &new_fees_paid);
-            self.fees_paid.replace(item_index, &fees_paid);
+            item_fees_paid.insert(&sender_id, &new_fees_paid);
+            self.fees_paid.replace(item_index, &item_fees_paid);
 
             log!("Total for item {} is now at {}", item_index, item_total_funding);
 
