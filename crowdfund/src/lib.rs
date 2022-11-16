@@ -11,6 +11,7 @@ use percentage::Percentage;
 
 const TGAS: u64 = 1_000_000_000_000;
 const DEFAULT_TOKEN_SUPPLY: u128 = 1_000_000;
+const DEFAULT_TOKEN_DECIMALS: u8 = 6;
 
 // Define the state of the smart contract
 #[near_bindgen]
@@ -20,6 +21,9 @@ pub struct Contract {
 
     // The base uri to find more info about the crowdfund item
     base_uri: String,
+
+    // The number of decimals for interpreting the balance amounts
+    decimals: u8,
 
     // The stablecoin accepted as payment
     accepted_coin: AccountId,
@@ -38,9 +42,6 @@ pub struct Contract {
 
     // Crowdfund goal per item (indexed balance)
     goals: Vector<u128>,
-
-    // The decimal amount for interpreting the amounts
-    decimals: u8,
 
     // Overview of fundings per item (index -> account -> USDC funded)
     fundings: Vector<UnorderedMap<AccountId, Balance>>,
@@ -104,6 +105,7 @@ impl Contract {
 
         Self{
             base_uri: String::from("test"),
+            decimals: DEFAULT_TOKEN_DECIMALS,
             accepted_coin: accepted_coin,
             nft_account_id: nft_account_id,
             default_fee_percentage: 4.0,
@@ -248,6 +250,11 @@ impl FungibleTokenReceiver for Contract {
         require!(item_progress < goal, "The goal has already been reached for this item.");
 
         // Substract the fee from the amount
+        let item_fee_percentage_f128: f128 = self.item_fee_percentage.get(item_index).unwrap().into();
+        let amount_f128: f128 = amount.into();
+
+        let feesss = amount_f128 * (item_fee_percentage_f128 / 100);
+
         let fee_percentage = Percentage::from_decimal(self.item_fee_percentage.get(item_index).unwrap() / 100.0); // Only way to do float percentage
         let fee_amount = fee_percentage.apply_to(amount.into());
         let netto_amount = amount - fee_amount.into();

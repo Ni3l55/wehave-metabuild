@@ -27,7 +27,8 @@ use near_sdk::{
     PromiseOrValue
 };
 
-use percentage::Percentage;
+use rust_decimal::Decimal;
+use std::str::FromStr;
 
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
@@ -94,12 +95,7 @@ impl Contract {
 
             // Calculate how much to deposit the crowdfunder (holder)
             let holder_funding = shares[index];
-            let holder_funding_u128: u128 = holder_funding.into();
-
-            let holder_percentage = Percentage::from(holder_funding_u128 / (total_funding / 100));
-
-            let total_supply_u128: u128 = total_supply.into();
-            let holder_token_supply: u128 = holder_percentage.apply_to(total_supply_u128);
+            let holder_token_supply = Self::calculate_user_tokens(holder_funding, total_funding, total_supply);
 
             // Deposit user's share of the supply
             this.token.internal_deposit(&holder, Balance::from(holder_token_supply));
@@ -118,6 +114,18 @@ impl Contract {
 
     fn on_tokens_burned(&mut self, account_id: AccountId, amount: Balance) {
         log!("Account @{} burned {}", account_id, amount);
+    }
+
+    fn calculate_user_tokens(holder_funding: U128, total_funding: u128, total_supply: U128) -> u128 {
+        let holder_funding_dec: Decimal = u128::from(holder_funding).into();
+        let total_funding_dec: Decimal = total_funding.into();
+        let total_supply_dec: Decimal = u128::from(total_supply).into();
+
+        let holder_percentage_dec = holder_funding_dec / total_funding_dec;
+        let holder_tokens_dec = total_supply_dec * holder_percentage_dec;
+        let holder_tokens: u128 = u128::from_str(&holder_tokens_dec.to_string()).unwrap();
+
+        holder_tokens
     }
 }
 
