@@ -7,7 +7,8 @@ use near_sdk::serde_json::json;
 use near_contract_standards::non_fungible_token::metadata::{TokenMetadata};
 use near_contract_standards::non_fungible_token::{Token, TokenId};
 
-use percentage::Percentage;
+use rust_decimal::Decimal;
+use std::str::FromStr;
 
 const TGAS: u64 = 1_000_000_000_000;
 const DEFAULT_TOKEN_SUPPLY: u128 = 1_000_000;
@@ -242,22 +243,16 @@ impl Contract {
 impl FungibleTokenReceiver for Contract {
     fn ft_on_transfer(&mut self, sender_id: AccountId, amount: U128, msg: String) -> PromiseOrValue<U128> {
         require!(env::predecessor_account_id() == self.accepted_coin, "This coin is not accepted as payment.");
-        let item_index: u64 = msg.parse().unwrap();
+        // TODO return the coin?
 
-        // Check crowdfund information
+        // Check if the crowdfund is elligible for funding TODO use status
+        let item_index: u64 = msg.parse().unwrap();
         let item_progress = self.get_crowdfund_progress(item_index);
         let goal = self.goals.get(item_index).unwrap();
         require!(item_progress < goal, "The goal has already been reached for this item.");
 
-        // Substract the fee from the amount
-        let item_fee_percentage_f128: f128 = self.item_fee_percentage.get(item_index).unwrap().into();
-        let amount_f128: f128 = amount.into();
-
-        let feesss = amount_f128 * (item_fee_percentage_f128 / 100);
-
-        let fee_percentage = Percentage::from_decimal(self.item_fee_percentage.get(item_index).unwrap() / 100.0); // Only way to do float percentage
-        let fee_amount = fee_percentage.apply_to(amount.into());
-        let netto_amount = amount - fee_amount.into();
+        // Get the fee amount and the netto funding amount
+        let (netto_amount, fee_amount) = self.split_netto_and_fee(&item_index, &amount);
 
         log!("Funding item {} for {} (Fee: {}) with progress {} and goal {}", item_index, netto_amount, fee_amount, item_progress, goal);
 
@@ -271,17 +266,15 @@ impl FungibleTokenReceiver for Contract {
         let mut new_funded = funded_by_sender.checked_add(netto_amount.into()).unwrap();
         let mut new_fees_paid = fees_paid_by_sender.checked_add(fee_amount.into()).unwrap();
 
-        if (item_progress + u128::from(netto_amount)) >= goal {
+        if (item_progress + netto_amount) >= goal {
             log!("CROWFUNDING GOAL REACHED");
 
             // if this surpasses the limit, give back what's leftover: calculate how much fees to give back as well
-            let netto_leftover = item_progress + u128::from(netto_amount) - goal;
+            let (netto_leftover, fee_leftover) = self.calculate_leftovers(item_progress, goal, netto_amount, fee_amount);
             new_funded = new_funded - netto_leftover;
+            new_fees_paid = new_fees_paid - fee_leftover;
 
-            let fee_leftover = Percentage::from(netto_leftover/netto_amount).apply_to(fee_amount);
-            new_fees_paid = new_fees_paid - fee_leftover.into();
-
-            let leftover = netto_leftover + fee_leftover.into();
+            let leftover = netto_leftover + fee_leftover;
 
             // Save the funding that is performed (BEFORE! issuing the token)
             item_fundings.insert(&sender_id, &new_funded);
@@ -322,6 +315,33 @@ impl FungibleTokenReceiver for Contract {
 
         log!("Unable to fund item. Returning tokens.");
         PromiseOrValue::Value(amount)
+    }
+
+    fn split_netto_and_fee(item_index: u64, amount: U128) -> (u128, u128) {
+        let item_fee_percentage_dec: Decimal = f128::from(self.item_fee_percentage.get(item_index).unwrap()).into();
+        let amount_dec: Decimal = u128::from(amount).into();
+
+        let fees_dec = amount_dec * (item_fee_percentage_dec / 100);
+        let fee_amount = u128::from_str(fees_dec.to_string().unwrap());
+        let netto_amount: u128 = amount.into() - fee_amount;
+
+        (netto_amount, fee_amount)
+    }
+
+    fn calculate_leftovers(item_progress: u128, goal: u128, netto_amount: u128, fee_amount: u128) -> (u128, u128) {
+        let netto_leftover = item_progress + netto_amount - goal;
+
+        let netto_leftover_dec: Decimal = netto_leftover.into();
+        let netto_amount_dec: Decimal = netto_amount.into();
+
+        let percentage_returned_dec: Decimal = netto_leftover_dec / netto_amount_dec;
+
+        let fee_amount_dec: Decimal = fee_amount.into();
+        let fee_leftover_dec: Decimal = fee_amount_dec * (percentage_returned_dec / 100);
+
+        let fee_leftover: u128 = u128::from_str(fee_leftover_dec.to_string().unwrap());
+
+        (netto_leftover, fee_leftover)
     }
 }
 
