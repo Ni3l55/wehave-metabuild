@@ -28,7 +28,7 @@ use near_sdk::{
 };
 
 use rust_decimal::Decimal;
-use std::str::FromStr;
+use rust_decimal::prelude::*;
 
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
@@ -123,7 +123,7 @@ impl Contract {
 
         let holder_percentage_dec = holder_funding_dec / total_funding_dec;
         let holder_tokens_dec = total_supply_dec * holder_percentage_dec;
-        let holder_tokens: u128 = u128::from_str(&holder_tokens_dec.to_string()).unwrap();
+        let holder_tokens: u128 = holder_tokens_dec.to_u128().unwrap();
 
         holder_tokens
     }
