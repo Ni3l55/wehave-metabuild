@@ -27,6 +27,7 @@ Deployments
 
 The project is live at `app-wehave-io.vercel.app`.
 Crowdfunding is deployed at `crowdfunds3-wehave.testnet`. NFT collection is deployed at `items3-wehave.testnet`.
+Item tokens get deployed automatically at `item{number}.items3-wehave.testnet` with number being an identifier of the item. DAO of an item gets deployed automatically at `dao-item{number}.items3-wehave.testnet`
 
 Quick Start
 ===========
